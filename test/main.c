@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <string.h>
+#include <sys/unistd.h>
 
 void * server_function(void *arg)
 {
@@ -20,15 +21,21 @@ void * server_function(void *arg)
     return NULL;
 }
 
-void * client_function(char *request)
+void client_function(char *request)
 {
     struct Client client = client_constructor(AF_INET, SOCK_STREAM, 0, INADDR_ANY, 1248);
+    client.request(&client, "127.0.0.1", request);
 }
 
 int main(void) {
 
     pthread_t server_thread;
-    pthread_create(server_thread, NULL, server_function, NULL);
+    pthread_create(&server_thread, NULL, server_function, NULL);
 
-    return 0;
+    while(1) {
+        char request[512];
+        memset(request, 0, 512);
+        fgets(request, 512, stdin);
+        client_function(request);
+    }
 }

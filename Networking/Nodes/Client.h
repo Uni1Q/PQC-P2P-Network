@@ -21,6 +21,6 @@ struct Client {
     char * (*request)(struct Client *client , char *server_ip, char *request);
 };
 
-struct Client client_constructors(int domain, int service, int protocol, int port, u_long interface);
+struct Client client_constructor(int domain, int service, int protocol, int port, u_long interface);
 
 #endif //CLIENT_H

@@ -6,8 +6,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-struct Server server_constructor(int domain, int service, int protocol, u_long interface, int port, int backlog) {
+void register_routes_server(struct Server *server, char *(*route_function)(void *arg), char *path);
+
+struct Server server_constructor(int domain, int service, int protocol, u_long interface, int port, int backlog)
+{
     struct Server server;
     //basic parameters of the server
     server.domain = domain;
@@ -22,6 +26,10 @@ struct Server server_constructor(int domain, int service, int protocol, u_long i
     server.address.sin_addr.s_addr = htonl(interface);
     // create socket for server
     server.socket = socket(domain, service, protocol);
+    // Initialize the dictionary.
+    server.routes = dictionary_constructor(compare_string_keys);
+
+    server.register_routes = register_routes_server;
     // confirm successful connection
     if (server.socket == 0)
         {
@@ -39,4 +47,11 @@ struct Server server_constructor(int domain, int service, int protocol, u_long i
         exit(1);
     }
     return server;
+}
+
+void register_routes_server(struct Server *server, char *(*route_function)(void *arg), char *path)
+{
+    struct ServerRoute route;
+    route.route_function = route_function;
+    server->routes.insert(&server->routes, path, sizeof(char[strlen(path)]), &route, sizeof(route));
 }

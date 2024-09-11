@@ -1,6 +1,6 @@
-//
-// Created by rokas on 02/09/2024.
-//
+#
+# Created by rokas on 02/09/2024.
+#
 
 ###############################################################################
 # COMPILER
@@ -106,28 +106,6 @@ Files:
 
 
 ###############################################################################
-# MARK: TEST
-###############################################################################
-
-test: test_p2p test_linked_list test_queue
-
-test_p2p: test/main.c
-	$(CC) $(CFLAGS) -o test_p2p test/main.c libeom.a
-
-test_linked_list: test/test_linked_list.c
-	$(CC) $(CFLAGS) -o test_linked_list test/test_linked_list.c libeom.a
-
-test_queue: test/test_queue.c
-	$(CC) $(CFLAGS) -o test_queue test/test_queue.c libeom.a
-
-
-###############################################################################
 # MARK: CLEAN
 ###############################################################################
 
-# Remove all .o files and test files
-clean:
-	$(RM) *.o
-	$(RM) test_p2p
-	$(RM) test_linked_list
-	$(RM) test_queue

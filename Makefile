@@ -7,7 +7,8 @@
 ###############################################################################
 
 CC=gcc
-CFLAGS=-Wall -pedantic
+#CFLAGS=-Wall -Wextra -pedantic -std=c11 -DWIN32
+CFLAGS=-Wall -Wextra -pedantic -std=c11 -I/usr/include 
 AR=ar
 ARFLAGS=rcs
 RM=rm -f
@@ -88,7 +89,7 @@ HTTPRequest:
 
 
 ###############################################################################
-# MARK: Systems
+# MARK: SYSTEMS
 ###############################################################################
 
 # Creates the systems library
@@ -109,3 +110,7 @@ Files:
 # MARK: CLEAN
 ###############################################################################
 
+# Clean up the compiled objects and libraries
+clean:
+	$(RM) *.o libeom.a DataStructures/DataStructures.a Networking/Networking.a Systems/System.a
+	$(RM) DataStructures/*.o Networking/Nodes/*.o Networking/Protocols/*.o Systems/*.o

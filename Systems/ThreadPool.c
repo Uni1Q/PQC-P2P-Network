@@ -4,12 +4,34 @@
 
 #include "ThreadPool.h"
 
-#include <stdlib.h>
-#include <stdio.h>
+//#include <stdio.h>
+// The generic_thread_function is required as the argument for creating each thread in the pool
+// It allows each thread to await a ThreadJob object and execute its contents
+// This make the pool dynamic - any function can be passed as a job
+void *generic_thread_function(void *arg)
+{
+    struct ThreadPool *thread_pool = (struct ThreadPool *)arg;
+    while (thread_pool->active == 1)
+    {
+        // Lock the work queue.
+        pthread_mutex_lock(&thread_pool->lock);
+        pthread_cond_wait(&thread_pool->signal, &thread_pool->lock);
+        // Get the job from the queue.
+        struct ThreadJob thread_job = *(struct ThreadJob *)thread_pool->work.peek(&thread_pool->work);
+        // Unlock the queue.
+        thread_pool->work.pop(&thread_pool->work);
+        pthread_mutex_unlock(&thread_pool->lock);
+        // Execute the job.
+        if (thread_job.job)
+        {
+            thread_job.job(thread_job.arg);
+        }
+    }
+    return NULL;
+}
 
 
-void * generic_thread_function(void *arg);
-void add_work(struct ThreadPool *thread_pool, struct ThreadJob thread_job);
+
 
 struct ThreadPool thread_pool_constructor(int num_threads)
 {
@@ -55,30 +77,6 @@ void thread_pool_destructor(struct ThreadPool *thread_pool)
     queue_destructor(&thread_pool->work);
 }
 
-// The generic_thread_function is required as the argument for creating each thread in the pool
-// It allows each thread to await a ThreadJob object and execute its contents
-// This make the pool dynamic - any function can be passed as a job
-void * generic_thread_function(void *arg)
-{
-    struct ThreadPool *thread_pool = (struct ThreadPool *)arg;
-    while (thread_pool->active == 1)
-    {
-        // Lock the work queue.
-        pthread_mutex_lock(&thread_pool->lock);
-        pthread_cond_wait(&thread_pool->signal, &thread_pool->lock);
-        // Get the job from the queue.
-        struct ThreadJob thread_job = *(struct ThreadJob *)thread_pool->work.peek(&thread_pool->work);
-        // Unlock the queue.
-        thread_pool->work.pop(&thread_pool->work);
-        pthread_mutex_unlock(&thread_pool->lock);
-        // Execute the job.
-        if (thread_job.job)
-        {
-            thread_job.job(thread_job.arg);
-        }
-    }
-    return NULL;
-}
 
 // Adds work to the queue in a thread safe way
 void add_work(struct ThreadPool *thread_pool, struct ThreadJob thread_job)

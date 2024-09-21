@@ -1,51 +1,56 @@
-//
-// Created by rokas on 02/09/2024.
-//
-
 #include "Server.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 void register_routes_server(struct Server *server, char *(*route_function)(void *arg), char *path);
 
-struct Server server_constructor(int domain, int service, int protocol, u_long interface, int port, int backlog)
+struct Server server_constructor(int domain, int service, int protocol, long interface, int port, int backlog, struct sockaddr_in address)
 {
-    struct Server server;
-    //basic parameters of the server
+    struct Server server;  // Properly initialize the struct
+
+    // Basic parameters of the server
     server.domain = domain;
     server.service = service;
     server.protocol = protocol;
-    server.interface = interface;
+    server.interface = interface;  // Use the renamed field
     server.port = port;
     server.backlog = backlog;
-    //use the parameters to construct servers' address
+    server.address = address;
+
+    // Construct the server's address
     server.address.sin_family = domain;
     server.address.sin_port = htons(port);
     server.address.sin_addr.s_addr = htonl(interface);
-    // create socket for server
-    server.socket = socket(domain, service, protocol);
-    // Initialize the dictionary.
-    server.routes = dictionary_constructor(compare_string_keys);
 
+    // Create socket for server
+    server.socket = socket(domain, service, protocol);
+
+    // Initialize the dictionary
+    server.routes = dictionary_constructor(compare_string_keys);
     server.register_routes = register_routes_server;
-    // confirm successful connection
-    if (server.socket == 0)
-        {
-        perror("failed to connect socket\n");
-        exit(1);
-        }
-    // bind socket to the network
-    if(bind(server.socket, (struct sockaddr*)&server.address, sizeof(server.address)) < 0) {
-        perror("failed to bind socket\n");
-        exit(1);
-    }
-    if(listen(server.socket, server.backlog) < 0)
+
+    // Confirm successful connection
+    if (server.socket == INVALID_SOCKET)
     {
-        perror("failed to listen on socket\n");
+        perror("Failed to create socket\n");
         exit(1);
     }
+
+    // Bind socket to the network
+    if (bind(server.socket, (struct sockaddr*)&server.address, sizeof(server.address)) < 0)
+    {
+        perror("Failed to bind socket\n");
+        exit(1);
+    }
+
+    // Listen on the socket
+    if (listen(server.socket, server.backlog) < 0)
+    {
+        perror("Failed to listen on socket\n");
+        exit(1);
+    }
+
     return server;
 }
 
@@ -53,5 +58,6 @@ void register_routes_server(struct Server *server, char *(*route_function)(void 
 {
     struct ServerRoute route;
     route.route_function = route_function;
-    server->routes.insert(&server->routes, path, sizeof(char[strlen(path)]), &route, sizeof(route));
+
+    server->routes.insert(&server->routes, path, strlen(path) + 1, &route, sizeof(route));
 }

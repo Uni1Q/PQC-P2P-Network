@@ -169,7 +169,7 @@ void *handle_client(void *arg) {
                 pthread_mutex_unlock(&peer_mutex);
                 write(client_sock, buffer, strlen(buffer));
 
-                printf("[%s] [%s] requested List of peers.", client_ip, username);
+                printf("[%s] [%s] requested List of peers.\n", client_ip, username);
 
                 // Broadcast to other clients about new peer
                 char notification[BUFFER_SIZE];

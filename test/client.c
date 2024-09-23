@@ -1,3 +1,7 @@
+//
+// Created by rokas on 23/09/2024.
+//
+
 // client.c
 
 #include <stdio.h>
@@ -8,15 +12,17 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
-#define ROUTING_SERVER_IP "127.0.0.1" // Replace with your routing server's IP
-#define ROUTING_SERVER_PORT 5453
+#define ROUTING_SERVER_IP "127.0.0.1" // 127.0.0.1 for local
+#define ROUTING_SERVER_PORT 5453 // Default server IP
 #define BUFFER_SIZE 1024
 
+int listen_port_global;
 int routing_server_sock; // Global variable to access routing server socket
 char peer_list[BUFFER_SIZE]; // Shared peer list
 pthread_mutex_t peer_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t peer_list_updated = PTHREAD_COND_INITIALIZER;
+int has_new_peer_list = 0; // Flag to indicate if a new peer list is available
 
 char username_global[50]; // Global variable to store the user's username
 int in_chat = 0; // Flag to indicate if the client is in a chat session
@@ -25,55 +31,15 @@ int in_chat = 0; // Flag to indicate if the client is in a chat session
 void *handle_incoming_connections(void *arg);
 void *handle_peer_connection(void *arg);
 void *send_messages(void *arg);
-void *server_listener(void *arg); // Function prototype
+void *server_listener(void *arg);
 void display_peer_list(const char *peer_list_str, const char *own_username);
-void request_peer_list(int sock);
 
-// Structure to hold chat information
 struct chat_info {
     int sock;
     char peer_username[50];
     char your_username[50];
 };
 
-// Function to request the latest peer list from the routing server
-void request_peer_list(int sock) {
-    char buffer[BUFFER_SIZE];
-    // Send a request to the server to get the latest peer list
-    snprintf(buffer, sizeof(buffer), "GET_PEER_LIST\n"); // Added newline for clarity
-    ssize_t bytes_sent = write(sock, buffer, strlen(buffer));
-    if (bytes_sent <= 0) {
-        pthread_mutex_lock(&print_mutex);
-        printf("Failed to send GET_PEER_LIST request to server.\n");
-        pthread_mutex_unlock(&print_mutex);
-        return;
-    }
-    pthread_mutex_lock(&print_mutex);
-    printf("Sent GET_PEER_LIST request to server.\n");
-    pthread_mutex_unlock(&print_mutex);
-
-    // Read the server's response
-    ssize_t bytes_read = read(sock, buffer, sizeof(buffer) - 1);
-    if (bytes_read <= 0) {
-        pthread_mutex_lock(&print_mutex);
-        printf("Failed to receive peer list from server.\n");
-        pthread_mutex_unlock(&print_mutex);
-        return;
-    }
-    buffer[bytes_read] = '\0';
-
-    pthread_mutex_lock(&print_mutex);
-    printf("Received response from server:\n%s\n", buffer);
-    pthread_mutex_unlock(&print_mutex);
-
-    // Update the peer list
-    pthread_mutex_lock(&peer_list_mutex);
-    strncpy(peer_list, buffer, BUFFER_SIZE - 1);
-    peer_list[BUFFER_SIZE - 1] = '\0';
-    pthread_mutex_unlock(&peer_list_mutex);
-}
-
-// Function to display the list of peers
 void display_peer_list(const char *peer_list_str, const char *own_username) {
     pthread_mutex_lock(&print_mutex);
     printf("List of discoverable peers:\n");
@@ -87,7 +53,7 @@ void display_peer_list(const char *peer_list_str, const char *own_username) {
         int port;
         if (sscanf(line, "%s %s %d", peer_name, peer_address, &port) == 3) {
             if (strcmp(peer_name, own_username) != 0) {
-                printf("Username: %s, IP: %s, Port: %d\n", peer_name, peer_address, port); // Detailed display
+                printf("%s\n", peer_name); // Only display the peer's username
                 count++;
             }
         }
@@ -99,17 +65,15 @@ void display_peer_list(const char *peer_list_str, const char *own_username) {
     pthread_mutex_unlock(&print_mutex);
 }
 
-// Function to handle incoming connections from peers
 void *handle_peer_connection(void *arg) {
     int peer_sock = *(int *)arg;
     free(arg);
     char buffer[BUFFER_SIZE];
     char peer_username[50];
     int connection_accepted = 0;
-    ssize_t bytes_read; // Single declaration to prevent shadowing
 
     // Read the connection request message
-    bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1);
+    ssize_t bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1);
     if (bytes_read <= 0) {
         pthread_mutex_lock(&print_mutex);
         printf("Connection closed by peer before handshake.\n");
@@ -134,37 +98,20 @@ void *handle_peer_connection(void *arg) {
 
         if (strcmp(response, "yes") == 0) {
             // Send ACCEPT response
-            strcpy(buffer, "ACCEPT\n"); // Added newline for consistency
-            ssize_t bytes_sent = write(peer_sock, buffer, strlen(buffer));
-            if (bytes_sent <= 0) {
-                pthread_mutex_lock(&print_mutex);
-                printf("Failed to send ACCEPT response to peer '%s'.\n", peer_username);
-                pthread_mutex_unlock(&print_mutex);
-                close(peer_sock);
-                pthread_exit(NULL);
-            }
+            strcpy(buffer, "ACCEPT");
+            write(peer_sock, buffer, strlen(buffer));
 
             // Remove from discoverable list
             char remove_msg[BUFFER_SIZE];
-            snprintf(remove_msg, sizeof(remove_msg), "REMOVE %s\n", username_global); // Added newline
-            ssize_t remove_sent = write(routing_server_sock, remove_msg, strlen(remove_msg));
-            if (remove_sent <= 0) {
-                pthread_mutex_lock(&print_mutex);
-                printf("Failed to send REMOVE request to server.\n");
-                pthread_mutex_unlock(&print_mutex);
-            }
+            snprintf(remove_msg, sizeof(remove_msg), "REMOVE %s", username_global);
+            write(routing_server_sock, remove_msg, strlen(remove_msg));
 
             connection_accepted = 1;
             in_chat = 1; // Set in_chat flag
         } else {
             // Send DENY response
-            strcpy(buffer, "DENY\n"); // Added newline for consistency
-            ssize_t bytes_sent = write(peer_sock, buffer, strlen(buffer));
-            if (bytes_sent <= 0) {
-                pthread_mutex_lock(&print_mutex);
-                printf("Failed to send DENY response to peer '%s'.\n", peer_username);
-                pthread_mutex_unlock(&print_mutex);
-            }
+            strcpy(buffer, "DENY");
+            write(peer_sock, buffer, strlen(buffer));
             pthread_mutex_lock(&print_mutex);
             printf("You denied the connection request from '%s'.\n", peer_username);
             pthread_mutex_unlock(&print_mutex);
@@ -188,14 +135,6 @@ void *handle_peer_connection(void *arg) {
         pthread_t send_thread;
         struct chat_info *chat = malloc(sizeof(struct chat_info));
 
-        if (chat == NULL) {
-            pthread_mutex_lock(&print_mutex);
-            printf("Failed to allocate memory for chat_info.\n");
-            pthread_mutex_unlock(&print_mutex);
-            close(peer_sock);
-            pthread_exit(NULL);
-        }
-
         chat->sock = peer_sock;
         strcpy(chat->peer_username, peer_username);
         strcpy(chat->your_username, username_global);
@@ -207,9 +146,6 @@ void *handle_peer_connection(void *arg) {
             pthread_exit(NULL);
         }
 
-        // Detach the thread as we don't need to join it
-        pthread_detach(send_thread);
-
         // Receive messages
         while ((bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1)) > 0) {
             buffer[bytes_read] = '\0';
@@ -218,17 +154,9 @@ void *handle_peer_connection(void *arg) {
             pthread_mutex_unlock(&print_mutex);
         }
 
-        if (bytes_read == 0) {
-            pthread_mutex_lock(&print_mutex);
-            printf("Connection with '%s' closed by peer.\n", peer_username);
-            pthread_mutex_unlock(&print_mutex);
-        } else if (bytes_read < 0) {
-            pthread_mutex_lock(&print_mutex);
-            perror("read");
-            printf("Error reading from peer '%s'.\n", peer_username);
-            pthread_mutex_unlock(&print_mutex);
-        }
-
+        pthread_mutex_lock(&print_mutex);
+        printf("Connection with '%s' closed.\n", peer_username);
+        pthread_mutex_unlock(&print_mutex);
         close(peer_sock);
         in_chat = 0; // Reset in_chat flag
         pthread_exit(NULL);
@@ -238,42 +166,31 @@ void *handle_peer_connection(void *arg) {
     pthread_exit(NULL);
 }
 
-// Function to send messages to the connected peer
 void *send_messages(void *arg) {
     struct chat_info *chat = (struct chat_info *)arg;
     char message[BUFFER_SIZE];
-    ssize_t bytes_sent;
 
     while (1) {
         pthread_mutex_lock(&print_mutex);
         printf("[%s]: ", chat->your_username);
         pthread_mutex_unlock(&print_mutex);
         fflush(stdout);
-
         if (fgets(message, sizeof(message), stdin) == NULL) {
-            // User closed input (e.g., pressed Ctrl+D)
             break;
         }
-
-        bytes_sent = write(chat->sock, message, strlen(message));
-        if (bytes_sent <= 0) {
+        if (write(chat->sock, message, strlen(message)) <= 0) {
             pthread_mutex_lock(&print_mutex);
             printf("Failed to send message. Connection may have been lost.\n");
             pthread_mutex_unlock(&print_mutex);
             break;
         }
     }
-
-    close(chat->sock);
     free(chat);
-    in_chat = 0; // Reset in_chat flag
     pthread_exit(NULL);
 }
 
-// Function to handle incoming connections from peers
 void *handle_incoming_connections(void *arg) {
     int listen_port = *(int *)arg;
-    free(arg);
     int server_sock, client_sock;
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_len = sizeof(client_addr);
@@ -336,46 +253,48 @@ void *handle_incoming_connections(void *arg) {
             free(new_sock);
             continue;
         }
-        pthread_detach(peer_thread); // Detach the thread as we don't need to join it
+        pthread_detach(peer_thread);
     }
     close(server_sock);
     pthread_exit(NULL);
 }
 
-// Function to listen to messages from the routing server
 void *server_listener(void *arg) {
-    (void)arg; // Suppress unused parameter warning
-
+    char *username = (char *)arg;
     char buffer[BUFFER_SIZE];
-    ssize_t bytes_read;
-
     while (1) {
-        bytes_read = read(routing_server_sock, buffer, sizeof(buffer) - 1);
+        ssize_t bytes_read = read(routing_server_sock, buffer, sizeof(buffer) - 1);
         if (bytes_read <= 0) {
-            pthread_mutex_lock(&print_mutex);
-            if (bytes_read == 0) {
-                printf("Disconnected from routing server.\n");
-            } else {
-                perror("read");
-                printf("Error reading from routing server.\n");
-            }
-            pthread_mutex_unlock(&print_mutex);
+            // Connection closed or error
             break;
         }
         buffer[bytes_read] = '\0';
 
-        pthread_mutex_lock(&print_mutex);
-        printf("\nReceived from server: %s\n", buffer);
-        pthread_mutex_unlock(&print_mutex);
-
-        // Example: If server notifies about a new peer, refresh the list
-        if (strstr(buffer, "NEW_PEER") != NULL && !in_chat) {
-            pthread_mutex_lock(&print_mutex);
-            printf("New peer available. Refreshing peer list...\n");
-            pthread_mutex_unlock(&print_mutex);
-            request_peer_list(routing_server_sock);
+        if (strcmp(buffer, "USERNAME_TAKEN") == 0) {
+            // Username is taken, should not happen here
+            continue;
         }
-        // Handle other server messages if needed
+
+        if (strstr(buffer, "New peer connected") != NULL && !in_chat) {
+            // Automatically refresh the peer list
+            char request[BUFFER_SIZE];
+            snprintf(request, sizeof(request), "REGISTER %s %d", username, listen_port_global);
+            write(routing_server_sock, request, strlen(request));
+            // Receive updated peer list
+            bytes_read = read(routing_server_sock, buffer, sizeof(buffer) - 1);
+            if (bytes_read > 0) {
+                buffer[bytes_read] = '\0';
+                pthread_mutex_lock(&peer_list_mutex);
+                strcpy(peer_list, buffer);
+                has_new_peer_list = 1;
+                pthread_cond_signal(&peer_list_updated);
+                pthread_mutex_unlock(&peer_list_mutex);
+                pthread_mutex_lock(&print_mutex);
+                printf("\nPeer list updated. New peers are available.\n");
+                pthread_mutex_unlock(&print_mutex);
+            }
+        }
+        // Handle other messages if needed
     }
     pthread_exit(NULL);
 }
@@ -386,12 +305,8 @@ int main() {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
     int server_available = 1;
+    int listen_port;
     pthread_t listener_thread, server_listener_thread;
-
-    // Initialize mutexes and condition variables
-    pthread_mutex_init(&peer_list_mutex, NULL);
-    pthread_mutex_init(&print_mutex, NULL);
-    pthread_cond_init(&peer_list_updated, NULL);
 
     // Connect to routing server
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -417,7 +332,6 @@ int main() {
     if (!server_available) {
         // Handle direct connection (not covered here)
         printf("Routing server not available.\n");
-        close(sock);
         exit(1);
     }
 
@@ -434,13 +348,12 @@ int main() {
         printf("Enter port to listen for incoming connections: ");
         pthread_mutex_unlock(&print_mutex);
         fgets(buffer, sizeof(buffer), stdin);
-        int listen_port = atoi(buffer);
+        listen_port = atoi(buffer);
+        listen_port_global = listen_port; // Store globally for use in thread
 
-        if (listen_port <= 0 || listen_port > 65535) {
-            pthread_mutex_lock(&print_mutex);
-            printf("Invalid port number. Please enter a port between 1 and 65535.\n");
-            pthread_mutex_unlock(&print_mutex);
-            close(sock);
+        // Start the listener thread for incoming connections
+        if (pthread_create(&listener_thread, NULL, handle_incoming_connections, &listen_port_global) != 0) {
+            perror("pthread_create");
             exit(1);
         }
 
@@ -453,113 +366,39 @@ int main() {
             fgets(username_global, sizeof(username_global), stdin);
             username_global[strcspn(username_global, "\n")] = '\0'; // Remove newline
 
-            if (strlen(username_global) == 0) {
-                pthread_mutex_lock(&print_mutex);
-                printf("Username cannot be empty. Please try again.\n");
-                pthread_mutex_unlock(&print_mutex);
-                continue;
-            }
-
             // Register with routing server
-            snprintf(buffer, sizeof(buffer), "REGISTER %s %d\n", username_global, listen_port); // Added newline
-            ssize_t bytes_sent = write(sock, buffer, strlen(buffer));
-            if (bytes_sent <= 0) {
-                pthread_mutex_lock(&print_mutex);
-                printf("Failed to send REGISTER request to server.\n");
-                pthread_mutex_unlock(&print_mutex);
-                close(sock);
-                exit(1);
-            }
-            pthread_mutex_lock(&print_mutex);
-            printf("Sent REGISTER request to server.\n");
-            pthread_mutex_unlock(&print_mutex);
+            snprintf(buffer, sizeof(buffer), "REGISTER %s %d", username_global, listen_port);
+            write(sock, buffer, strlen(buffer));
 
             // Read server response
             bytes_read = read(sock, buffer, sizeof(buffer) - 1);
             if (bytes_read <= 0) {
-                pthread_mutex_lock(&print_mutex);
                 printf("Failed to receive response from server.\n");
-                pthread_mutex_unlock(&print_mutex);
-                close(sock);
                 exit(1);
             }
             buffer[bytes_read] = '\0';
 
-            pthread_mutex_lock(&print_mutex);
-            printf("Received response from server:\n%s\n", buffer);
-            pthread_mutex_unlock(&print_mutex);
-
-            if (strcmp(buffer, "USERNAME_TAKEN\n") == 0) { // Adjusted to include newline
+            if (strcmp(buffer, "USERNAME_TAKEN") == 0) {
                 pthread_mutex_lock(&print_mutex);
                 printf("Username '%s' is already taken. Please choose a different username.\n", username_global);
                 pthread_mutex_unlock(&print_mutex);
-            } else if (strncmp(buffer, "REGISTERED", 10) == 0) { // Assuming server sends "REGISTERED" on success
-                // Assume registration successful and buffer contains the peer list
-                // Extract peer list from the response
-                // Example server response: "REGISTERED\npeer1 IP1 PORT1\npeer2 IP2 PORT2\n"
-                // We'll skip the first line ("REGISTERED") and store the rest as peer_list
-
-                // Find the first newline
-                char *peer_list_start = strchr(buffer, '\n');
-                if (peer_list_start != NULL) {
-                    peer_list_start++; // Move past the newline
-                    pthread_mutex_lock(&peer_list_mutex);
-                    strncpy(peer_list, peer_list_start, BUFFER_SIZE - 1);
-                    peer_list[BUFFER_SIZE - 1] = '\0';
-                    pthread_mutex_unlock(&peer_list_mutex);
-                } else {
-                    // No peers available
-                    pthread_mutex_lock(&peer_list_mutex);
-                    peer_list[0] = '\0';
-                    pthread_mutex_unlock(&peer_list_mutex);
-                }
-
-                registered = 1;
             } else {
-                // Handle other server responses if needed
-                pthread_mutex_lock(&print_mutex);
-                printf("Unexpected response from server. Please try again.\n");
-                pthread_mutex_unlock(&print_mutex);
+                // Assume registration successful and buffer contains the peer list
+                registered = 1;
             }
         }
 
-        // Start the listener thread for incoming connections AFTER registration
-        int *listen_port_ptr = malloc(sizeof(int));
-        if (listen_port_ptr == NULL) {
-            perror("malloc");
-            close(sock);
-            exit(1);
-        }
-        *listen_port_ptr = listen_port;
-
-        if (pthread_create(&listener_thread, NULL, handle_incoming_connections, listen_port_ptr) != 0) {
-            perror("pthread_create");
-            free(listen_port_ptr);
-            close(sock);
-            exit(1);
-        }
-
         // Start server listener thread
-        if (pthread_create(&server_listener_thread, NULL, server_listener, NULL) != 0) {
+        if (pthread_create(&server_listener_thread, NULL, server_listener, username_global) != 0) {
             perror("pthread_create");
-            close(sock);
             exit(1);
         }
 
-        // Display the initial peer list
+        // Receive list of discoverable peers
         pthread_mutex_lock(&peer_list_mutex);
-        if (strlen(peer_list) > 0) {
-            pthread_mutex_lock(&print_mutex);
-            printf("Initial list of peers:\n%s\n", peer_list);
-            pthread_mutex_unlock(&print_mutex);
-        } else {
-            pthread_mutex_lock(&print_mutex);
-            printf("No available peers at the moment.\n");
-            pthread_mutex_unlock(&print_mutex);
-        }
+        strcpy(peer_list, buffer);
         pthread_mutex_unlock(&peer_list_mutex);
 
-        // Main loop to interact with the user
         while (1) {
             if (in_chat) {
                 // If in chat, wait until chat is over
@@ -567,15 +406,10 @@ int main() {
                 continue;
             }
 
-            // Request the latest peer list
-            request_peer_list(sock);
-
-            // Display the peer list
             pthread_mutex_lock(&peer_list_mutex);
             display_peer_list(peer_list, username_global);
             pthread_mutex_unlock(&peer_list_mutex);
 
-            // Prompt user to connect to a peer
             pthread_mutex_lock(&print_mutex);
             printf("Enter the username of the peer to connect to (or 'no' to skip): ");
             pthread_mutex_unlock(&print_mutex);
@@ -586,8 +420,7 @@ int main() {
             }
 
             char selected_username[50];
-            strncpy(selected_username, buffer, sizeof(selected_username) - 1);
-            selected_username[sizeof(selected_username) - 1] = '\0'; // Ensure null-termination
+            strcpy(selected_username, buffer);
 
             if (strcmp(selected_username, username_global) == 0) {
                 pthread_mutex_lock(&print_mutex);
@@ -612,8 +445,7 @@ int main() {
                 int port;
                 if (sscanf(line, "%s %s %d", peer_name, peer_address, &port) == 3) {
                     if (strcmp(peer_name, selected_username) == 0) {
-                        strncpy(peer_ip, peer_address, sizeof(peer_ip) - 1);
-                        peer_ip[sizeof(peer_ip) - 1] = '\0';
+                        strcpy(peer_ip, peer_address);
                         peer_port = port;
                         peer_found = 1;
                         break;
@@ -624,7 +456,7 @@ int main() {
 
             if (!peer_found) {
                 pthread_mutex_lock(&print_mutex);
-                printf("Peer '%s' not found. Please try again.\n", selected_username);
+                printf("Peer not found. Please try again.\n");
                 pthread_mutex_unlock(&print_mutex);
                 continue;
             } else {
@@ -637,58 +469,58 @@ int main() {
                 struct sockaddr_in peer_addr;
                 peer_addr.sin_family = AF_INET;
                 peer_addr.sin_port = htons(peer_port);
-                if (inet_pton(AF_INET, peer_ip, &peer_addr.sin_addr) <= 0) {
-                    pthread_mutex_lock(&print_mutex);
-                    printf("Invalid IP address for peer '%s'.\n", selected_username);
-                    pthread_mutex_unlock(&print_mutex);
-                    close(peer_sock);
-                    continue;
-                }
+                inet_pton(AF_INET, peer_ip, &peer_addr.sin_addr);
 
                 if (connect(peer_sock, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0) {
                     pthread_mutex_lock(&print_mutex);
-                    printf("Could not connect to peer '%s' at %s:%d.\n", selected_username, peer_ip, peer_port);
+                    printf("Could not connect to peer. The peer may no longer be connected.\n");
                     pthread_mutex_unlock(&print_mutex);
-                    // Inform the server that the peer is no longer connected (if needed)
-                    snprintf(buffer, sizeof(buffer), "PEER_DISCONNECTED %s\n", selected_username);
+                    // Inform the server that the peer is no longer connected
+                    snprintf(buffer, sizeof(buffer), "PEER_DISCONNECTED %s", selected_username);
                     write(sock, buffer, strlen(buffer));
+
+                    // Receive updated peer list
+                    bytes_read = read(sock, buffer, sizeof(buffer) - 1);
+                    if (bytes_read > 0) {
+                        buffer[bytes_read] = '\0';
+                        pthread_mutex_lock(&peer_list_mutex);
+                        strcpy(peer_list, buffer);
+                        has_new_peer_list = 1;
+                        pthread_mutex_unlock(&peer_list_mutex);
+                        pthread_mutex_lock(&print_mutex);
+                        printf("Updated list of discoverable peers:\n");
+                        display_peer_list(peer_list, username_global);
+                        pthread_mutex_unlock(&print_mutex);
+                    }
                     close(peer_sock);
                     continue;
                 } else {
                     pthread_mutex_lock(&print_mutex);
-                    printf("Connected to peer '%s' at %s:%d.\n", selected_username, peer_ip, peer_port);
+                    printf("Connected to peer at %s:%d\n", peer_ip, peer_port);
                     pthread_mutex_unlock(&print_mutex);
 
                     // Send connection request with your username
-                    snprintf(buffer, sizeof(buffer), "CONNECT_REQUEST %s\n", username_global); // Added newline
-                    ssize_t bytes_sent = write(peer_sock, buffer, strlen(buffer));
-                    if (bytes_sent <= 0) {
-                        pthread_mutex_lock(&print_mutex);
-                        printf("Failed to send CONNECT_REQUEST to peer '%s'.\n", selected_username);
-                        pthread_mutex_unlock(&print_mutex);
-                        close(peer_sock);
-                        continue;
-                    }
+                    snprintf(buffer, sizeof(buffer), "CONNECT_REQUEST %s", username_global);
+                    write(peer_sock, buffer, strlen(buffer));
 
                     // Wait for response
                     bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1);
                     if (bytes_read <= 0) {
                         pthread_mutex_lock(&print_mutex);
-                        printf("No response from peer '%s'.\n", selected_username);
+                        printf("No response from peer.\n");
                         pthread_mutex_unlock(&print_mutex);
                         close(peer_sock);
                         continue;
                     }
                     buffer[bytes_read] = '\0';
 
-                    if (strcmp(buffer, "ACCEPT\n") == 0) { // Adjusted to include newline
+                    if (strcmp(buffer, "ACCEPT") == 0) {
                         // Remove from discoverable list
-                        snprintf(buffer, sizeof(buffer), "REMOVE %s\n", username_global); // Added newline
+                        snprintf(buffer, sizeof(buffer), "REMOVE %s", username_global);
                         write(sock, buffer, strlen(buffer));
 
                         pthread_mutex_lock(&print_mutex);
                         printf("Connection accepted by '%s'.\n", selected_username);
-                        printf("Successfully connected to user '%s'.\n", selected_username);
                         pthread_mutex_unlock(&print_mutex);
 
                         in_chat = 1; // Set in_chat flag
@@ -697,33 +529,17 @@ int main() {
                         pthread_t receive_thread;
                         struct chat_info *chat = malloc(sizeof(struct chat_info));
 
-                        if (chat == NULL) {
-                            pthread_mutex_lock(&print_mutex);
-                            printf("Failed to allocate memory for chat_info.\n");
-                            pthread_mutex_unlock(&print_mutex);
-                            close(peer_sock);
-                            in_chat = 0;
-                            continue;
-                        }
-
                         chat->sock = peer_sock;
-                        strncpy(chat->peer_username, selected_username, sizeof(chat->peer_username) - 1);
-                        chat->peer_username[sizeof(chat->peer_username) - 1] = '\0';
-                        strncpy(chat->your_username, username_global, sizeof(chat->your_username) - 1);
-                        chat->your_username[sizeof(chat->your_username) - 1] = '\0';
+                        strcpy(chat->peer_username, selected_username);
+                        strcpy(chat->your_username, username_global);
 
                         if (pthread_create(&receive_thread, NULL, send_messages, (void *)chat) != 0) {
                             perror("pthread_create");
-                            pthread_mutex_lock(&print_mutex);
-                            printf("Failed to create thread for sending messages.\n");
-                            pthread_mutex_unlock(&print_mutex);
                             close(peer_sock);
                             free(chat);
                             in_chat = 0;
                             continue;
                         }
-
-                        pthread_detach(receive_thread); // Detach the thread
 
                         // Receive messages
                         while ((bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1)) > 0) {
@@ -733,20 +549,12 @@ int main() {
                             pthread_mutex_unlock(&print_mutex);
                         }
 
-                        if (bytes_read == 0) {
-                            pthread_mutex_lock(&print_mutex);
-                            printf("Connection with '%s' closed by peer.\n", selected_username);
-                            pthread_mutex_unlock(&print_mutex);
-                        } else if (bytes_read < 0) {
-                            pthread_mutex_lock(&print_mutex);
-                            perror("read");
-                            printf("Error reading from peer '%s'.\n", selected_username);
-                            pthread_mutex_unlock(&print_mutex);
-                        }
-
+                        pthread_mutex_lock(&print_mutex);
+                        printf("Connection with '%s' closed.\n", selected_username);
+                        pthread_mutex_unlock(&print_mutex);
                         close(peer_sock);
                         in_chat = 0; // Reset in_chat flag
-                    } else if (strcmp(buffer, "DENY\n") == 0) { // Adjusted to include newline
+                    } else if (strcmp(buffer, "DENY") == 0) {
                         pthread_mutex_lock(&print_mutex);
                         printf("Connection request denied by '%s'.\n", selected_username);
                         pthread_mutex_unlock(&print_mutex);
@@ -754,7 +562,7 @@ int main() {
                         // Continue and remain discoverable
                     } else {
                         pthread_mutex_lock(&print_mutex);
-                        printf("Received unknown response from peer '%s'.\n", selected_username);
+                        printf("Received unknown response from peer.\n");
                         pthread_mutex_unlock(&print_mutex);
                         close(peer_sock);
                         // Continue and remain discoverable
@@ -764,13 +572,11 @@ int main() {
         }
 
         // Send a kill request to the routing server to remove from discoverable list
-        snprintf(buffer, sizeof(buffer), "REMOVE %s\n", username_global); // Added newline
+        snprintf(buffer, sizeof(buffer), "REMOVE %s", username_global);
         write(sock, buffer, strlen(buffer));
 
-        // Optionally, join threads or clean up resources here
-        // pthread_join(listener_thread, NULL);
-        // pthread_join(server_listener_thread, NULL);
-
+        pthread_join(listener_thread, NULL);
+        pthread_join(server_listener_thread, NULL);
     } else {
         // Do not become discoverable
         pthread_mutex_lock(&print_mutex);

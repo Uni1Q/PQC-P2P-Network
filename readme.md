@@ -1,6 +1,33 @@
-Software application for Solent University by Rokas Jodka
+# Dissertation project software application For Solent University by **Rokas Jodka**
 
-To run the APP:
+To run the app in a Windows environment:
 
-1. Ensure Cygwin is installed and set as default debugger for project as the application uses POSIX Environment headers.
-2. 
+ 1. Install Cygwin with the following extentions:
+	- gcc-core
+	- gdb
+	- make
+	- openssl
+ 2. Open Cygwin64 terminal
+ 3. cd [install directory]
+ 4. Type "make" in console and the application should compile
+ 5. cd test
+ 6. Type "make" and it should make an exetuable test file
+ 7. Either type "./main [port]" on the cygwin terminal
+
+If for any issue the application does not compile on Windows, follow the steps below:
+1. Open terminal
+2. Using the distributions package manager install the following
+	- gcc
+	- make
+	- openssl
+3. cd [install directory]
+4. Type "make" in console and the application should compile
+5. cd test
+6. Type "make" and it should make an exetuable test file
+7. Either type "./main [port]" on the cygwin terminal
+
+### The appplication can work locally, although to have it work over the internet you will need to port forward
+
+### To test the application locally you can open multiple instances of the Cygwin terminal and entering different ports. Adjust the IP in client.c
+
+```#define ROUTING_SERVER_IP "127.0.0.1"```

@@ -16,7 +16,8 @@ void user_portal(struct PeerToPeer *peer_to_peer);
 char * known_hosts(void *arg);
 
 
-struct PeerToPeer peer_to_peer_constructor(int domain, int service, int protocol, int port, u_long interface, void * (*server_function)(void *arg), void * (*client_function)(void *arg))
+
+struct PeerToPeer peer_to_peer_constructor(int domain, int service, int protocol, int port, long interface, void * (*server_function)(void *arg), void * (*client_function)(void *arg))
 {
     struct PeerToPeer peer_to_peer;
     peer_to_peer.domain = domain;
@@ -28,7 +29,15 @@ struct PeerToPeer peer_to_peer_constructor(int domain, int service, int protocol
     peer_to_peer.known_hosts = linked_list_constructor();
     peer_to_peer.known_hosts.insert(&peer_to_peer.known_hosts, 0, "127.0.0.1", 10);
 
-    peer_to_peer.server = server_constructor(domain, service, protocol, interface, port, 20);
+    struct sockaddr_in address;
+memset(&address, 0, sizeof(address)); // Clear the struct
+address.sin_family = AF_INET;
+address.sin_addr.s_addr = INADDR_ANY; // or a specific IP address
+address.sin_port = htons(80); // Use appropriate port
+
+    //peer_to_peer.server = server_constructor(domain, service, protocol, interface, port, 20);
+    peer_to_peer.server = server_constructor(domain, service, protocol, interface, port, 20, address);
+
     peer_to_peer.server.register_routes(&peer_to_peer.server, known_hosts, "/known_hosts\n");
 
 

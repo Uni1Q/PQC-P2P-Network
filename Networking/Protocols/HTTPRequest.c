@@ -22,7 +22,7 @@ struct HTTPRequest http_request_constructor(char *request_string)
     // Convert from string literal and replace the blank line with a vertical line
     char requested[strlen(request_string)];
     strcpy(requested, request_string);
-    for (int i = 0; i < strlen(requested) - 2; i++)
+    for (size_t  i = 0; i < strlen(requested) - 2; i++)
     {
         if (requested[i] == '\n' && requested[i + 1] == '\n')
         {
@@ -40,7 +40,7 @@ struct HTTPRequest http_request_constructor(char *request_string)
     extract_body(&request, body);
     // Return the final product
     return request;
-};
+}
 
 // Destroy a request by freeing the memory in each constituent dictionary
 void http_request_destructor(struct HTTPRequest *request)

@@ -7,7 +7,8 @@
 ###############################################################################
 
 CC=gcc
-CFLAGS=-Wall -pedantic
+#CFLAGS=-Wall -Wextra -pedantic -std=c11 -DWIN32
+CFLAGS=-Wall -Wextra -pedantic -std=c11 -I/usr/include 
 AR=ar
 ARFLAGS=rcs
 RM=rm -f
@@ -66,7 +67,7 @@ Dictionary:
 
 # Creates the networking library
 Networking: NetworkingSub
-	$(AR) $(ARFLAGS) Networking/Networking.a Server.o HTTPRequest.o HTTPServer.o Node.o LinkedList.o Queue.o BinarySearchTree.o Entry.o Client.o Dictionary.o ThreadPool.o PeerToPeer.o
+	$(AR) $(ARFLAGS) Networking/Networking.a Server.o HTTPRequest.o BlockHeaders.o HTTPServer.o Node.o LinkedList.o Queue.o BinarySearchTree.o Entry.o Client.o Dictionary.o ThreadPool.o PeerToPeer.o
 
 # Sub components of the networking library
 NetworkingSub: DataStructuresSub SystemsSub Server Client HTTPRequest HTTPServer PeerToPeer
@@ -84,11 +85,11 @@ HTTPServer:
 	$(CC) $(CFLAGS) -c Networking/Nodes/HTTPServer.c
 
 HTTPRequest:
-	$(CC) $(CFLAGS) -c Networking/Protocols/HTTPRequest.c
+	$(CC) $(CFLAGS) -c Networking/Protocols/HTTPRequest.c Networking/Protocols/BlockHeaders.c
 
 
 ###############################################################################
-# MARK: Systems
+# MARK: SYSTEMS
 ###############################################################################
 
 # Creates the systems library
@@ -109,3 +110,7 @@ Files:
 # MARK: CLEAN
 ###############################################################################
 
+# Clean up the compiled objects and libraries
+clean:
+	$(RM) *.o libeom.a DataStructures/DataStructures.a Networking/Networking.a Systems/System.a
+	$(RM) DataStructures/*.o Networking/Nodes/*.o Networking/Protocols/*.o Systems/*.o

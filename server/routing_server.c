@@ -188,7 +188,6 @@ void *handle_client(void *arg) {
             // Prefix with "PEER_LIST\n"
             char message[BUFFER_SIZE * 2];
             snprintf(message, sizeof(message), "PEER_LIST\n%s", peer_list_str);
-            safe_print("Sending to client [%s]: %s\n", username, message);
 
             write(client_sock, message, strlen(message));
         } else if (strncmp(buffer, "REMOVE", 6) == 0) {

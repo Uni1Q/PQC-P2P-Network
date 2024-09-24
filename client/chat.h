@@ -6,14 +6,15 @@
 #ifndef CHAT_H
 #define CHAT_H
 
-void *handle_incoming_connections(void *arg);
-void *handle_peer_connection(void *arg);
-void *send_messages(void *arg);
+#define BUFFER_SIZE 1024
 
 struct chat_info {
     int sock;
     char peer_username[50];
     char your_username[50];
 };
+
+void *send_messages(void *arg);
+void *receive_messages(void *arg);
 
 #endif // CHAT_H

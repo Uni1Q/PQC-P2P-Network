@@ -1,65 +1,56 @@
-# Makefile for PQC-P2P-Network Project
+# oldMakefile
 
-# Compiler
 CC = gcc
-
-# Directories
+CFLAGS = -Wall -Wextra -Werror -pthread -g -I./common -I./client -I./server
+SRC_DIR = .
+COMMON_DIR = common
 CLIENT_DIR = client
 SERVER_DIR = server
-COMMON_DIR = common
+OBJ_DIR = obj
 BIN_DIR = bin
 
-# Compiler Flags
-CFLAGS = -Wall -Wextra -Werror -pthread -g \
-         -I$(CLIENT_DIR) \
-         -I$(SERVER_DIR) \
-         -I$(COMMON_DIR)
+# Define source files
+COMMON_SOURCES = $(wildcard $(COMMON_DIR)/*.c)
+CLIENT_SOURCES = $(wildcard $(CLIENT_DIR)/*.c)
+SERVER_SOURCES = $(wildcard $(SERVER_DIR)/*.c)
 
-# Linker Flags
-LDFLAGS = -pthread
+# Define object files
+COMMON_OBJECTS = $(COMMON_SOURCES:$(COMMON_DIR)/%.c=$(OBJ_DIR)/common/%.o)
+CLIENT_OBJECTS = $(CLIENT_SOURCES:$(CLIENT_DIR)/%.c=$(OBJ_DIR)/client/%.o)
+SERVER_OBJECTS = $(SERVER_SOURCES:$(SERVER_DIR)/%.c=$(OBJ_DIR)/server/%.o)
 
-# Source Files
-CLIENT_SRCS = $(wildcard $(CLIENT_DIR)/*.c)
-SERVER_SRCS = $(wildcard $(SERVER_DIR)/*.c)
-COMMON_SRCS = $(wildcard $(COMMON_DIR)/*.c)
+# Define targets
+CLIENT_TARGET = $(BIN_DIR)/client_app
+SERVER_TARGET = $(BIN_DIR)/server_app
 
-# Object Files
-CLIENT_OBJS = $(CLIENT_SRCS:.c=.o)
-SERVER_OBJS = $(SERVER_SRCS:.c=.o)
-COMMON_OBJS = $(COMMON_SRCS:.c=.o)
+# Default target
+all: $(CLIENT_TARGET) $(SERVER_TARGET)
 
-# Executables with Unique Names
-CLIENT_EXEC = client_app
-SERVER_EXEC = server_app
+# Client executable
+$(CLIENT_TARGET): $(CLIENT_OBJECTS) $(COMMON_OBJECTS)
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ -pthread
 
-# Default Target
-all: $(BIN_DIR) $(CLIENT_EXEC) $(SERVER_EXEC)
+# Server executable
+$(SERVER_TARGET): $(SERVER_OBJECTS) $(COMMON_OBJECTS)
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ -pthread
 
-# Create bin directory if it doesn't exist
-$(BIN_DIR):
-	mkdir -p $(BIN_DIR)
-
-# Client Build Rules
-$(CLIENT_EXEC): $(CLIENT_OBJS) $(COMMON_OBJS) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDFLAGS)
-
-# Server Build Rules
-$(SERVER_EXEC): $(SERVER_OBJS) $(COMMON_OBJS) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDFLAGS)
-
-# Compilation Rules
-$(CLIENT_DIR)/%.o: $(CLIENT_DIR)/%.c
+# Pattern rules
+$(OBJ_DIR)/common/%.o: $(COMMON_DIR)/%.c
+	@mkdir -p $(OBJ_DIR)/common
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(SERVER_DIR)/%.o: $(SERVER_DIR)/%.c
+$(OBJ_DIR)/client/%.o: $(CLIENT_DIR)/%.c
+	@mkdir -p $(OBJ_DIR)/client
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(COMMON_DIR)/%.o: $(COMMON_DIR)/%.c
+$(OBJ_DIR)/server/%.o: $(SERVER_DIR)/%.c
+	@mkdir -p $(OBJ_DIR)/server
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean Target
+# Clean target
 clean:
-	rm -f $(CLIENT_DIR)/*.o $(SERVER_DIR)/*.o $(COMMON_DIR)/*.o $(BIN_DIR)/$(CLIENT_EXEC) $(BIN_DIR)/$(SERVER_EXEC)
+	rm -rf $(OBJ_DIR)/* $(BIN_DIR)/*
 
-# Phony Targets
 .PHONY: all clean

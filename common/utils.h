@@ -6,11 +6,16 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <stdio.h>
+#include <stdarg.h>
 #include <pthread.h>
 
-extern pthread_mutex_t print_mutex;
-
-void safe_print(const char *format, ...);
+// Function Prototypes
+void safe_fgets(char *buffer, size_t size, FILE *stream);
 void trim_newline(char *str);
+void safe_print(const char *format, ...);
+
+// Declare print_mutex
+extern pthread_mutex_t print_mutex;
 
 #endif // UTILS_H

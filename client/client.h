@@ -6,13 +6,19 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-void *server_listener(void *arg);
-void register_with_server(int sock, const char *username, int listen_port);
-void request_peer_list(int sock);
+#include <pthread.h>
 
-extern int routing_server_sock;
-extern int listen_port_global;
-extern int in_chat;
+// Declare global variables as extern
+extern int server_sock;
 extern char username_global[50];
+extern int peer_port;
+extern volatile int in_chat;
+
+// Function prototypes
+void *server_listener(void *arg);
+void *peer_listener(void *arg);
+void *handle_incoming_peer(void *arg);
+
+void request_peer_list(int server_sock);
 
 #endif // CLIENT_H

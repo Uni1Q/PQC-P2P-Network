@@ -1,107 +1,43 @@
-# Makefile for building client, routingServer, and testClient applications
+# test/Makefile
 
-# ===========================
-#       Directory Setup
-# ===========================
-
-# Define the directories where the libraries are located
-LIB_DIRS = ../DataStructures ../Systems ../Networking
-
-# Define the target directory where the libraries will be copied
-LIB_TARGET_DIR = ./libs
-
-# ===========================
-#       Library Definitions
-# ===========================
-
-# Define the library names with proper prefixes and paths
-LIB_DATASTRUCTURES = $(LIB_TARGET_DIR)/libDataStructures.a
-LIB_SYSTEM = $(LIB_TARGET_DIR)/libSystem.a
-LIB_NETWORKING = $(LIB_TARGET_DIR)/libNetworking.a
-
-# Aggregate all libraries for easy reference
-LIBS = $(LIB_DATASTRUCTURES) $(LIB_SYSTEM) $(LIB_NETWORKING)
-
-# ===========================
-#     Source and Object Files
-# ===========================
-
-# Define the source files
-CLIENT_SRC = client.c
-SERVER_SRC = routingServer.c
-TEST_CLIENT_SRC = testClient.c
-
-# Define the corresponding object files
-CLIENT_OBJ = $(CLIENT_SRC:.c=.o)
-SERVER_OBJ = $(SERVER_SRC:.c=.o)
-TEST_CLIENT_OBJ = $(TEST_CLIENT_SRC:.c=.o)
-
-# ===========================
-#    Compiler and Flags
-# ===========================
-
-# Compiler
 CC = gcc
+CFLAGS = -Wall -Wextra -Werror -pthread -g -I../common
+OBJ_DIR = obj
+BIN_DIR = bin
 
-# Compiler flags
-CFLAGS = -g -Wall -Wextra -Wpedantic -Wshadow -Wpointer-arith -O3 -fomit-frame-pointer -pthread
+COMMON_SOURCES = ../common/network.c ../common/utils.c
+COMMON_OBJECTS = $(patsubst ../common/%.c,$(OBJ_DIR)/%.o,$(COMMON_SOURCES))
 
-# Linker flags
-LDFLAGS = -L$(LIB_TARGET_DIR) -lDataStructures -lSystem -lNetworking -pthread
+TEST_SOURCES = static_peer.c test_client.c get_peer_list.c
+TEST_OBJECTS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(TEST_SOURCES))
 
-# Include directories
-INCLUDES = -I.
+TARGET_STATIC_PEER = $(BIN_DIR)/static_peer
+TARGET_TEST_CLIENT = $(BIN_DIR)/test_client
+TARGET_GET_PEER_LIST = $(BIN_DIR)/get_peer_list
 
-# ===========================
-#          Targets
-# ===========================
+all: $(TARGET_STATIC_PEER) $(TARGET_TEST_CLIENT) $(TARGET_GET_PEER_LIST)
 
-# Phony targets to avoid conflicts with file names
-.PHONY: all move-libs client routingServer testClient clean
+$(TARGET_STATIC_PEER): $(OBJ_DIR)/static_peer.o $(COMMON_OBJECTS)
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ -pthread
 
-# Default target: build everything
-all: move-libs client routingServer testClient
+$(TARGET_TEST_CLIENT): $(OBJ_DIR)/test_client.o $(COMMON_OBJECTS)
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ -pthread
 
-# Target to create the libs directory and copy libraries
-move-libs: $(LIBS)
+$(TARGET_GET_PEER_LIST): $(OBJ_DIR)/get_peer_list.o $(COMMON_OBJECTS)
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ -pthread
 
-# Rule to copy libDataStructures.a
-$(LIB_TARGET_DIR)/libDataStructures.a: ../DataStructures/DataStructures.a | $(LIB_TARGET_DIR)
-	cp ../DataStructures/DataStructures.a $@
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-# Rule to copy libSystem.a
-$(LIB_TARGET_DIR)/libSystem.a: ../Systems/System.a | $(LIB_TARGET_DIR)
-	cp ../Systems/System.a $@
+$(OBJ_DIR)/%.o: ../common/%.c
+	@mkdir -p $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-# Rule to copy libNetworking.a
-$(LIB_TARGET_DIR)/libNetworking.a: ../Networking/Networking.a | $(LIB_TARGET_DIR)
-	cp ../Networking/Networking.a $@
-
-# Rule to create the libs directory if it doesn't exist
-$(LIB_TARGET_DIR):
-	mkdir -p $(LIB_TARGET_DIR)
-
-# Target to build the client executable
-client: $(CLIENT_OBJ)
-	$(CC) $(CFLAGS) -o client $(CLIENT_OBJ) $(LDFLAGS)
-
-# Target to build the routingServer executable
-routingServer: $(SERVER_OBJ)
-	$(CC) $(CFLAGS) -o routingServer $(SERVER_OBJ) $(LDFLAGS)
-
-# Target to build the testClient executable
-testClient: $(TEST_CLIENT_OBJ)
-	$(CC) $(CFLAGS) -o testClient $(TEST_CLIENT_OBJ) $(LDFLAGS)
-
-# Target to clean build artifacts
 clean:
-	rm -f $(CLIENT_OBJ) $(SERVER_OBJ) $(TEST_CLIENT_OBJ) client routingServer testClient
-	# Note: Libraries in ./libs/ are preserved to avoid redundant copying
+	rm -rf $(OBJ_DIR)/* $(BIN_DIR)/*
 
-# ===========================
-#   Compilation Rules
-# ===========================
-
-# Pattern rule to compile .c files to .o files
-%.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+.PHONY: all clean

@@ -10,9 +10,7 @@ To run the app in a Windows environment:
  2. Open Cygwin64 terminal
  3. cd [install directory]
  4. Type "make" in console and the application should compile
- 5. cd test
- 6. Type "make" and it should make an exetuable test file
- 7. Either type "./main [port]" on the cygwin terminal
+ 5. ./bin/client_app to launch the client or ./bin/server_app to launch the routing server
 
 If for any issue the application does not compile on Windows, follow the steps below:
 1. Open terminal
@@ -20,14 +18,12 @@ If for any issue the application does not compile on Windows, follow the steps b
 	- gcc
 	- make
 	- openssl
-3. cd [install directory]
-4. Type "make" in console and the application should compile
-5. cd test
-6. Type "make" and it should make an exetuable test file
-7. Either type "./main [port]" on the cygwin terminal
+ 3. cd [install directory]
+ 4. Type "make" in console and the application should compile
+ 5. ./bin/client_app to launch the client or ./bin/server_app to launch the routing server
 
 ### The appplication can work locally, although to have it work over the internet you will need to port forward
 
-### To test the application locally you can open multiple instances of the Cygwin terminal and entering different ports. Adjust the IP in client.c
+### To test the application locally you can open multiple instances of the Cygwin terminal and entering different ports. Adjust the IP in client/main.c
 
 ```#define ROUTING_SERVER_IP "127.0.0.1"```

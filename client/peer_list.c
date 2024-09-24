@@ -9,10 +9,6 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 
-#ifndef INET_ADDRSTRLEN
-#define INET_ADDRSTRLEN 16
-#endif
-
 char peer_list[BUFFER_SIZE];
 pthread_mutex_t peer_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -23,7 +19,7 @@ void update_peer_list(const char *new_peer_list) {
     pthread_mutex_unlock(&peer_list_mutex);
 }
 
-void display_peer_list(const char *own_username) {
+void display_peer_list() {
     pthread_mutex_lock(&peer_list_mutex);
     char peer_list_copy[BUFFER_SIZE];
     strncpy(peer_list_copy, peer_list, BUFFER_SIZE - 1);
@@ -38,10 +34,8 @@ void display_peer_list(const char *own_username) {
         char peer_address[INET_ADDRSTRLEN];
         int port;
         if (sscanf(line, "%s %s %d", peer_name, peer_address, &port) == 3) {
-            if (strcmp(peer_name, own_username) != 0) {
-                safe_print("Username: %s, IP: %s, Port: %d\n", peer_name, peer_address, port);
-                count++;
-            }
+            safe_print("Username: %s, IP: %s, Port: %d\n", peer_name, peer_address, port);
+            count++;
         }
         line = strtok(NULL, "\n");
     }

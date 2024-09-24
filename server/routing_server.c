@@ -1,7 +1,3 @@
-//
-// Created by rokas on 24/09/2024.
-//
-
 // routing_server.c
 #include "routing_server.h"
 #include "peer_registry.h"
@@ -82,12 +78,11 @@ void *handle_client(void *arg) {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
 
-    // Get client IP address
-    struct sockaddr_in addr;
-    socklen_t addr_size = sizeof(struct sockaddr_in);
-    getpeername(client_sock, (struct sockaddr *)&addr, &addr_size);
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    getpeername(client_sock, (struct sockaddr *)&client_addr, &addr_len);
     char client_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &addr.sin_addr, client_ip, sizeof(client_ip));
+    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
 
     safe_print("[%s] connected.\n", client_ip);
 
@@ -125,18 +120,29 @@ void *handle_client(void *arg) {
                 // Username is available
                 add_peer(username, client_ip, peer_port);
 
-                safe_print("[%s] [%s] connected.\n", client_ip, username);
+                safe_print("[%s] [%s] registered.\n", client_ip, username);
 
                 // Send list of discoverable peers to client
-                char peer_list_str[BUFFER_SIZE];
-                get_peer_list(peer_list_str, sizeof(peer_list_str));
-                write(client_sock, peer_list_str, strlen(peer_list_str));
+                pthread_mutex_lock(&peer_list_mutex);
+                buffer[0] = '\0';
+                for (int i = 0; i < peer_count; i++) {
+                    strcat(buffer, peer_list[i].username);
+                    strcat(buffer, " ");
+                    strcat(buffer, peer_list[i].ip);
+                    strcat(buffer, " ");
+                    char port_str[6];
+                    sprintf(port_str, "%d", peer_list[i].port);
+                    strcat(buffer, port_str);
+                    strcat(buffer, "\n");
+                }
+                pthread_mutex_unlock(&peer_list_mutex);
+                write(client_sock, buffer, strlen(buffer));
 
-                safe_print("[%s] [%s] requested List of peers.\n", client_ip, username);
+                safe_print("[%s] [%s] received peer list.\n", client_ip, username);
 
                 // Broadcast to other clients about new peer
                 char notification[BUFFER_SIZE];
-                snprintf(notification, sizeof(notification), "New peer connected, refresh list (yes/no)?\n");
+                snprintf(notification, sizeof(notification), "New peer connected: %s\n", username);
                 broadcast_message(notification, client_sock);
 
                 registered = 1; // Registration successful
@@ -152,7 +158,25 @@ void *handle_client(void *arg) {
     while ((bytes_read = read(client_sock, buffer, sizeof(buffer) - 1)) > 0) {
         buffer[bytes_read] = '\0';
 
-        if (strncmp(buffer, "REMOVE", 6) == 0) {
+        if (strncmp(buffer, "GET_PEER_LIST", 13) == 0) {
+            // Send the updated peer list to the client
+            pthread_mutex_lock(&peer_list_mutex);
+            char peer_list_str[BUFFER_SIZE];
+            peer_list_str[0] = '\0';
+            for (int i = 0; i < peer_count; i++) {
+                strcat(peer_list_str, peer_list[i].username);
+                strcat(peer_list_str, " ");
+                strcat(peer_list_str, peer_list[i].ip);
+                strcat(peer_list_str, " ");
+                char port_str[6];
+                sprintf(port_str, "%d", peer_list[i].port);
+                strcat(peer_list_str, port_str);
+                strcat(peer_list_str, "\n");
+            }
+            pthread_mutex_unlock(&peer_list_mutex);
+
+            write(client_sock, peer_list_str, strlen(peer_list_str));
+        } else if (strncmp(buffer, "REMOVE", 6) == 0) {
             // Client wants to be removed from discoverable list
             sscanf(buffer + 7, "%s", username);
 
@@ -171,6 +195,10 @@ void *handle_client(void *arg) {
             remove_peer(disconnected_username);
 
             safe_print("\nPeer '%s' reported as disconnected by [%s].\n", disconnected_username, username);
+        } else {
+            // Unknown command
+            char response[] = "INVALID_COMMAND";
+            write(client_sock, response, strlen(response));
         }
     }
 

@@ -15,7 +15,7 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 
-#define SERVER_IP "127.0.0.1" // 127.0.0.1 for local testing, 159.89.248.152 to connect to droplet
+#define SERVER_IP "159.89.248.152" // 127.0.0.1 for local testing, 159.89.248.152 to connect to droplet
 #define SERVER_PORT 5453
 #define BUFFER_SIZE 1024
 
@@ -74,18 +74,13 @@ int main() {
                 safe_print("Invalid registration command.\n");
                 close(server_sock);
                 exit(1);
-            } else if (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
+            } else (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
                 // Registration successful
                 // Update the local peer list
                 char *peer_list_str = buffer + 10;
                 update_peer_list(peer_list_str);
                 safe_print("Successfully registered with the server.\n");
                 break;
-            } else {
-                safe_print("Received from server: %s\n", buffer);
-                safe_print("Unexpected response from server: %s\n", buffer);
-                close(server_sock);
-                exit(1);
             }
         }
 

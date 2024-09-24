@@ -1,116 +1,65 @@
-#
-# Created by rokas on 02/09/2024.
-#
+# Makefile for PQC-P2P-Network Project
 
-###############################################################################
-# COMPILER
-###############################################################################
+# Compiler
+CC = gcc
 
-CC=gcc
-#CFLAGS=-Wall -Wextra -pedantic -std=c11 -DWIN32
-CFLAGS=-Wall -Wextra -pedantic -std=c11 -I/usr/include 
-AR=ar
-ARFLAGS=rcs
-RM=rm -f
+# Directories
+CLIENT_DIR = client
+SERVER_DIR = server
+COMMON_DIR = common
+BIN_DIR = bin
 
+# Compiler Flags
+CFLAGS = -Wall -Wextra -Werror -pthread -g \
+         -I$(CLIENT_DIR) \
+         -I$(SERVER_DIR) \
+         -I$(COMMON_DIR)
 
-###############################################################################
-# MARK: ALL
-###############################################################################
+# Linker Flags
+LDFLAGS = -pthread
 
-# Create top level static library and all sub-libraries
-all: Main DataStructures Networking Systems
+# Source Files
+CLIENT_SRCS = $(wildcard $(CLIENT_DIR)/*.c)
+SERVER_SRCS = $(wildcard $(SERVER_DIR)/*.c)
+COMMON_SRCS = $(wildcard $(COMMON_DIR)/*.c)
 
+# Object Files
+CLIENT_OBJS = $(CLIENT_SRCS:.c=.o)
+SERVER_OBJS = $(SERVER_SRCS:.c=.o)
+COMMON_OBJS = $(COMMON_SRCS:.c=.o)
 
-###############################################################################
-# MARK: MAIN
-###############################################################################
+# Executables with Unique Names
+CLIENT_EXEC = client_app
+SERVER_EXEC = server_app
 
-# Creates just the top level static library
-Main: DataStructuresSub NetworkingSub SystemsSub
-	$(AR) $(ARFLAGS) libeom.a Node.o LinkedList.o Queue.o BinarySearchTree.o Entry.o Dictionary.o Client.o Server.o HTTPServer.o HTTPRequest.o ThreadPool.o PeerToPeer.o Files.o
+# Default Target
+all: $(BIN_DIR) $(CLIENT_EXEC) $(SERVER_EXEC)
 
+# Create bin directory if it doesn't exist
+$(BIN_DIR):
+	mkdir -p $(BIN_DIR)
 
-###############################################################################
-# MARK: DATA STRUCTURES
-###############################################################################
+# Client Build Rules
+$(CLIENT_EXEC): $(CLIENT_OBJS) $(COMMON_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDFLAGS)
 
-# Creates the data structures library
-DataStructures: DataStructuresSub
-	$(AR) $(ARFLAGS) DataStructures/DataStructures.a Node.o LinkedList.o Queue.o BinarySearchTree.o Entry.o Dictionary.o
+# Server Build Rules
+$(SERVER_EXEC): $(SERVER_OBJS) $(COMMON_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDFLAGS)
 
-# Sub components of the data structures library
-DataStructuresSub: Node LinkedList Queue BinarySearchTree Entry Dictionary
+# Compilation Rules
+$(CLIENT_DIR)/%.o: $(CLIENT_DIR)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-Node:
-	$(CC) $(CFLAGS) -c DataStructures/Common/Node.c
+$(SERVER_DIR)/%.o: $(SERVER_DIR)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-LinkedList:
-	$(CC) $(CFLAGS) -c DataStructures/Lists/LinkedList.c
+$(COMMON_DIR)/%.o: $(COMMON_DIR)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-Queue:
-	$(CC) $(CFLAGS) -c DataStructures/Lists/Queue.c
-
-BinarySearchTree:
-	$(CC) $(CFLAGS) -c DataStructures/Trees/BinarySearchTree.c
-
-Entry:
-	$(CC) $(CFLAGS) -c DataStructures/Dictionary/Entry.c
-
-Dictionary:
-	$(CC) $(CFLAGS) -c DataStructures/Dictionary/Dictionary.c
-
-
-###############################################################################
-# MARK: NETWORKING
-###############################################################################
-
-# Creates the networking library
-Networking: NetworkingSub
-	$(AR) $(ARFLAGS) Networking/Networking.a Server.o HTTPRequest.o BlockHeaders.o HTTPServer.o Node.o LinkedList.o Queue.o BinarySearchTree.o Entry.o Client.o Dictionary.o ThreadPool.o PeerToPeer.o
-
-# Sub components of the networking library
-NetworkingSub: DataStructuresSub SystemsSub Server Client HTTPRequest HTTPServer PeerToPeer
-
-Server:
-	$(CC) $(CFLAGS) -c Networking/Nodes/Server.c
-
-Client:
-	$(CC) $(CFLAGS) -c Networking/Nodes/Client.c
-
-PeerToPeer:
-	$(CC) $(CFLAGS) -c Networking/Nodes/PeerToPeer.c
-
-HTTPServer:
-	$(CC) $(CFLAGS) -c Networking/Nodes/HTTPServer.c
-
-HTTPRequest:
-	$(CC) $(CFLAGS) -c Networking/Protocols/HTTPRequest.c Networking/Protocols/BlockHeaders.c
-
-
-###############################################################################
-# MARK: SYSTEMS
-###############################################################################
-
-# Creates the systems library
-Systems: SystemsSub
-	$(AR) $(ARFLAGS) Systems/System.a ThreadPool.o Files.o
-
-# Sub components of the systems library
-SystemsSub: ThreadPool Files
-
-ThreadPool:
-	$(CC) $(CFLAGS) -c Systems/ThreadPool.c
-
-Files:
-	$(CC) $(CFLAGS) -c Systems/Files.c
-
-
-###############################################################################
-# MARK: CLEAN
-###############################################################################
-
-# Clean up the compiled objects and libraries
+# Clean Target
 clean:
-	$(RM) *.o libeom.a DataStructures/DataStructures.a Networking/Networking.a Systems/System.a
-	$(RM) DataStructures/*.o Networking/Nodes/*.o Networking/Protocols/*.o Systems/*.o
+	rm -f $(CLIENT_DIR)/*.o $(SERVER_DIR)/*.o $(COMMON_DIR)/*.o $(BIN_DIR)/$(CLIENT_EXEC) $(BIN_DIR)/$(SERVER_EXEC)
+
+# Phony Targets
+.PHONY: all clean

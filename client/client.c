@@ -22,24 +22,6 @@ char username_global[50];
 int peer_port;
 volatile int in_chat = 0;
 
-// Implement server_listener
-void *server_listener(void *arg) {
-    int sock = *(int *)arg;
-    char buffer[BUFFER_SIZE];
-    ssize_t bytes_read;
-
-    while ((bytes_read = read(sock, buffer, sizeof(buffer) - 1)) > 0) {
-        buffer[bytes_read] = '\0';
-        update_peer_list(buffer);
-        safe_print("Peer list updated.\n");
-    }
-
-    // Connection closed
-    safe_print("Disconnected from server.\n");
-    close(sock);
-    pthread_exit(NULL);
-}
-
 // Implement request_peer_list
 void request_peer_list(int sock) {
     const char *request = "GET_PEER_LIST\n";
@@ -48,42 +30,39 @@ void request_peer_list(int sock) {
     }
 }
 
-void *peer_listener(void *arg) {
-    (void)arg;
+void *server_listener(void *arg) {
+    int sock = *(int *)arg;
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
 
-    int listen_sock = bind_and_listen(peer_port);
-    if (listen_sock < 0) {
-        safe_print("Failed to start peer listener on port %d.\n", peer_port);
-        pthread_exit(NULL);
-    }
-    safe_print("Listening for incoming peer connections on port %d...\n", peer_port);
+    while ((bytes_read = read(sock, buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes_read] = '\0';
 
-    while (1) {
-        int peer_sock = accept(listen_sock, NULL, NULL);
-        if (peer_sock < 0) {
-            perror("accept");
-            continue;
-        }
+        // Check if the message is a notification about a new peer
+        if (strncmp(buffer, "New peer connected", 18) == 0) {
+            safe_print("Server notification: %s", buffer);
 
-        // Handle the incoming connection in a new thread
-        pthread_t peer_thread;
-        int *new_sock = malloc(sizeof(int));
-        if (new_sock == NULL) {
-            perror("malloc");
-            close(peer_sock);
-            continue;
+            // Send GET_PEER_LIST request to the server
+            request_peer_list(sock);
         }
-        *new_sock = peer_sock;
-        if (pthread_create(&peer_thread, NULL, handle_incoming_peer, (void *)new_sock) != 0) {
-            perror("pthread_create");
-            close(peer_sock);
-            free(new_sock);
-            continue;
+        // Check if the message is the updated peer list
+        else if (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
+            // The peer list starts after "PEER_LIST\n"
+            char *peer_list_str = buffer + 10;
+
+            // Update the local peer list
+            update_peer_list(peer_list_str);
+            safe_print("Peer list updated.\n");
         }
-        pthread_detach(peer_thread);
+        else {
+            // Handle other messages from the server if necessary
+            safe_print("Server message: %s", buffer);
+        }
     }
 
-    close(listen_sock);
+    // Connection closed
+    safe_print("Disconnected from server.\n");
+    close(sock);
     pthread_exit(NULL);
 }
 
@@ -165,6 +144,9 @@ void *handle_incoming_peer(void *arg) {
             // Re-register with the server
             snprintf(buffer, sizeof(buffer), "REGISTER %s %d\n", username_global, peer_port);
             write(server_sock, buffer, strlen(buffer));
+
+            // Request updated peer list
+            request_peer_list(server_sock);
         } else {
             // Send DENY
             strcpy(buffer, "DENY\n");
@@ -179,3 +161,44 @@ void *handle_incoming_peer(void *arg) {
     pthread_exit(NULL);
 }
 
+void *peer_listener(void *arg) {
+    int port = *(int *)arg;
+
+    int listen_sock = bind_and_listen(port);
+    if (listen_sock < 0) {
+        fprintf(stderr, "Failed to bind and listen on port %d.\n", port);
+        pthread_exit(NULL);
+    }
+
+    printf("Listening for incoming peer connections on port %d...\n", port);
+
+    while (1) {
+        int *peer_sock = malloc(sizeof(int));
+        if (peer_sock == NULL) {
+            perror("malloc");
+            continue;
+        }
+
+        struct sockaddr_in peer_addr;
+        socklen_t addr_size = sizeof(peer_addr);
+        *peer_sock = accept(listen_sock, (struct sockaddr *)&peer_addr, &addr_size);
+        if (*peer_sock < 0) {
+            perror("accept");
+            free(peer_sock);
+            continue;
+        }
+
+        // Handle the incoming peer connection in a new thread
+        pthread_t thread_id;
+        if (pthread_create(&thread_id, NULL, handle_incoming_peer, (void *)peer_sock) != 0) {
+            perror("pthread_create");
+            close(*peer_sock);
+            free(peer_sock);
+            continue;
+        }
+        pthread_detach(thread_id);
+    }
+
+    close(listen_sock);
+    pthread_exit(NULL);
+}

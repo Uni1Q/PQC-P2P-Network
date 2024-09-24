@@ -81,12 +81,12 @@ void *handle_client(void *arg) {
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
     getpeername(client_sock, (struct sockaddr *)&client_addr, &addr_len);
-    char client_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
+    char client_ip[IP_STR_LEN];
+    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
 
     safe_print("[%s] connected.\n", client_ip);
 
-    char username[50] = {0};
+    char username[USERNAME_MAX_LENGTH] = {0};
     int registered = 0;
 
     // Add client socket to the list
@@ -113,7 +113,7 @@ void *handle_client(void *arg) {
 
             if (username_exists(username)) {
                 // Username is taken
-                char response[] = "USERNAME_TAKEN";
+                char response[] = "USERNAME_TAKEN\n";
                 write(client_sock, response, strlen(response));
                 safe_print("\n[%s] attempted to register with taken username '%s'.\n", client_ip, username);
             } else {
@@ -124,19 +124,27 @@ void *handle_client(void *arg) {
 
                 // Send list of discoverable peers to client
                 pthread_mutex_lock(&peer_list_mutex);
-                buffer[0] = '\0';
+                char peer_list_str[BUFFER_SIZE];
+                peer_list_str[0] = '\0';
                 for (int i = 0; i < peer_count; i++) {
-                    strcat(buffer, peer_list[i].username);
-                    strcat(buffer, " ");
-                    strcat(buffer, peer_list[i].ip);
-                    strcat(buffer, " ");
-                    char port_str[6];
-                    sprintf(port_str, "%d", peer_list[i].port);
-                    strcat(buffer, port_str);
-                    strcat(buffer, "\n");
+                    if (strcmp(peer_list[i].username, username) != 0) {
+                        strcat(peer_list_str, peer_list[i].username);
+                        strcat(peer_list_str, " ");
+                        strcat(peer_list_str, peer_list[i].ip);
+                        strcat(peer_list_str, " ");
+                        char port_str[6];
+                        sprintf(port_str, "%d", peer_list[i].port);
+                        strcat(peer_list_str, port_str);
+                        strcat(peer_list_str, "\n");
+                    }
                 }
                 pthread_mutex_unlock(&peer_list_mutex);
-                write(client_sock, buffer, strlen(buffer));
+
+                // Prefix with "PEER_LIST\n"
+                char message[BUFFER_SIZE * 2];
+                snprintf(message, sizeof(message), "PEER_LIST\n%s", peer_list_str);
+
+                write(client_sock, message, strlen(message));
 
                 safe_print("[%s] [%s] received peer list.\n", client_ip, username);
 
@@ -149,7 +157,7 @@ void *handle_client(void *arg) {
             }
         } else {
             // Unknown command or not REGISTER
-            char response[] = "INVALID_COMMAND";
+            char response[] = "INVALID_COMMAND\n";
             write(client_sock, response, strlen(response));
         }
     }
@@ -164,18 +172,24 @@ void *handle_client(void *arg) {
             char peer_list_str[BUFFER_SIZE];
             peer_list_str[0] = '\0';
             for (int i = 0; i < peer_count; i++) {
-                strcat(peer_list_str, peer_list[i].username);
-                strcat(peer_list_str, " ");
-                strcat(peer_list_str, peer_list[i].ip);
-                strcat(peer_list_str, " ");
-                char port_str[6];
-                sprintf(port_str, "%d", peer_list[i].port);
-                strcat(peer_list_str, port_str);
-                strcat(peer_list_str, "\n");
+                if (strcmp(peer_list[i].username, username) != 0) {
+                    strcat(peer_list_str, peer_list[i].username);
+                    strcat(peer_list_str, " ");
+                    strcat(peer_list_str, peer_list[i].ip);
+                    strcat(peer_list_str, " ");
+                    char port_str[6];
+                    sprintf(port_str, "%d", peer_list[i].port);
+                    strcat(peer_list_str, port_str);
+                    strcat(peer_list_str, "\n");
+                }
             }
             pthread_mutex_unlock(&peer_list_mutex);
 
-            write(client_sock, peer_list_str, strlen(peer_list_str));
+            // Prefix with "PEER_LIST\n"
+            char message[BUFFER_SIZE * 2];
+            snprintf(message, sizeof(message), "PEER_LIST\n%s", peer_list_str);
+
+            write(client_sock, message, strlen(message));
         } else if (strncmp(buffer, "REMOVE", 6) == 0) {
             // Client wants to be removed from discoverable list
             sscanf(buffer + 7, "%s", username);
@@ -189,7 +203,7 @@ void *handle_client(void *arg) {
             break; // Exit loop and close connection
         } else if (strncmp(buffer, "PEER_DISCONNECTED", 17) == 0) {
             // Handle peer disconnection notification
-            char disconnected_username[50];
+            char disconnected_username[USERNAME_MAX_LENGTH];
             sscanf(buffer + 18, "%s", disconnected_username);
 
             remove_peer(disconnected_username);
@@ -197,7 +211,7 @@ void *handle_client(void *arg) {
             safe_print("\nPeer '%s' reported as disconnected by [%s].\n", disconnected_username, username);
         } else {
             // Unknown command
-            char response[] = "INVALID_COMMAND";
+            char response[] = "INVALID_COMMAND\n";
             write(client_sock, response, strlen(response));
         }
     }
@@ -219,3 +233,4 @@ void *handle_client(void *arg) {
     close(client_sock);
     pthread_exit(NULL);
 }
+

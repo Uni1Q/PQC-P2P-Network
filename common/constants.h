@@ -8,5 +8,6 @@
 
 #define USERNAME_MAX_LENGTH 50
 #define BUFFER_SIZE 1024
+#define IP_STR_LEN 16
 
 #endif // CONSTANTS_H

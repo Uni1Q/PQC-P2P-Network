@@ -12,7 +12,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
-#define ROUTING_SERVER_IP "127.0.0.1" // 127.0.0.1 for local
+#define ROUTING_SERVER_IP "159.89.248.152" // 127.0.0.1 for local, 159.89.248.152 to connect to hosted ip
 #define ROUTING_SERVER_PORT 5453 // Default server IP
 #define BUFFER_SIZE 1024
 

@@ -82,6 +82,7 @@ int main() {
                 safe_print("Successfully registered with the server.\n");
                 break;
             } else {
+                safe_print("Received from server: %s\n", buffer);
                 safe_print("Unexpected response from server: %s\n", buffer);
                 close(server_sock);
                 exit(1);

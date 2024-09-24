@@ -47,10 +47,7 @@ void *server_listener(void *arg) {
         }
         // Check if the message is the updated peer list
         else if (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
-            // The peer list starts after "PEER_LIST\n"
             char *peer_list_str = buffer + 10;
-
-            // Update the local peer list
             update_peer_list(peer_list_str);
             safe_print("Peer list updated.\n");
         }

@@ -52,7 +52,6 @@ void *server_listener(void *arg) {
             safe_print("Peer list updated.\n");
         }
         else {
-            // Handle other messages from the server if necessary
             safe_print("Server message: %s", buffer);
         }
     }

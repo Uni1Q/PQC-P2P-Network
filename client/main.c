@@ -1,8 +1,6 @@
 //
 // Created by rokas on 24/09/2024.
 //
-// client/main.c
-
 #include "client.h"
 #include "chat.h"
 #include "utils.h"
@@ -15,7 +13,7 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 
-#define SERVER_IP "159.89.248.152" // 127.0.0.1 for local testing, 159.89.248.152 to connect to droplet
+#define SERVER_IP "127.0.0.1" // 127.0.0.1 for local testing, 159.89.248.152 to connect to droplet
 #define SERVER_PORT 5453
 #define BUFFER_SIZE 1024
 
@@ -41,47 +39,59 @@ int main() {
     fgets(buffer, sizeof(buffer), stdin);
     trim_newline(buffer);
 
-    if (strcmp(buffer, "yes") == 0) {
-        safe_print("Enter port to listen for incoming connections: ");
-        fgets(buffer, sizeof(buffer), stdin);
-        peer_port = atoi(buffer);
+if (strcmp(buffer, "yes") == 0) {
+    safe_print("Enter port to listen for incoming connections: ");
+    fgets(buffer, sizeof(buffer), stdin);
+    trim_newline(buffer);
+    peer_port = atoi(buffer);
 
-        while (1) {
-            safe_print("Enter your preferred username: ");
-            fgets(username_global, sizeof(username_global), stdin);
-            trim_newline(username_global);
+    // Registration loop
+    while (1) {
+        safe_print("Enter your preferred username: ");
+        fgets(username_global, sizeof(username_global), stdin);
+        trim_newline(username_global);
 
-            // Send registration request to the server
-            snprintf(buffer, sizeof(buffer), "REGISTER %s %d\n", username_global, peer_port);
-            if (write(server_sock, buffer, strlen(buffer)) < 0) {
-                perror("write");
-                close(server_sock);
-                exit(1);
-            }
+        // Send registration request to the server
+        snprintf(buffer, sizeof(buffer), "REGISTER %s %d", username_global, peer_port);
+        safe_print("Sending to server: '%s'\n", buffer); // Debugging statement
+        if (write(server_sock, buffer, strlen(buffer)) < 0) {
+            perror("write");
+            close(server_sock);
+            exit(1);
+        }
 
-            // Read the server's response
-            bytes_read = read(server_sock, buffer, sizeof(buffer) - 1);
-            if (bytes_read <= 0) {
-                perror("read");
-                close(server_sock);
-                exit(1);
-            }
-            buffer[bytes_read] = '\0';
+        // Read the server's response
+        bytes_read = read(server_sock, buffer, sizeof(buffer) - 1);
+        if (bytes_read <= 0) {
+            perror("read");
+            close(server_sock);
+            exit(1);
+        }
+        buffer[bytes_read] = '\0';
 
-            if (strncmp(buffer, "USERNAME_TAKEN", 14) == 0) {
-                safe_print("Username '%s' is already taken. Please choose a different username.\n", username_global);
-            } else if (strncmp(buffer, "INVALID_COMMAND", 15) == 0) {
-                safe_print("Invalid registration command.\n");
-                close(server_sock);
-                exit(1);
-            } else (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
-                // Registration successful
-                // Update the local peer list
-                char *peer_list_str = buffer + 10;
-                update_peer_list(peer_list_str);
-                safe_print("Successfully registered with the server.\n");
-                break;
-            }
+        if (strncmp(buffer, "USERNAME_TAKEN", 14) == 0) {
+            safe_print("Username '%s' is already taken. Please choose a different username.\n", username_global);
+        } else if (strncmp(buffer, "INVALID_COMMAND", 15) == 0) {
+            safe_print("Invalid registration command.\n");
+            close(server_sock);
+            exit(1);
+        } else if (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
+            // Registration successful
+            // Update the local peer list
+            char *peer_list_str = buffer + 10;
+            update_peer_list(peer_list_str);
+            safe_print("Successfully registered with the server.\n");
+            break;
+        } else {
+            safe_print("Unexpected response from server: %s\n", buffer);
+        }
+    }
+
+        // Start the peer listener thread after successful registration
+        if (pthread_create(&peer_listener_thread, NULL, peer_listener, &peer_port) != 0) {
+            perror("pthread_create");
+            close(server_sock);
+            exit(1);
         }
 
         // Start the server listener thread
@@ -91,15 +101,15 @@ int main() {
             exit(1);
         }
 
+        // Request the initial peer list from the server
+        request_peer_list(server_sock);
+
         // Start listening for incoming peer connections
         if (pthread_create(&peer_listener_thread, NULL, peer_listener, &peer_port) != 0) {
             perror("pthread_create");
             close(server_sock);
             exit(1);
         }
-
-        // Request the initial peer list from the server
-        request_peer_list(server_sock);
 
         // Main loop for user input
         while (1) {

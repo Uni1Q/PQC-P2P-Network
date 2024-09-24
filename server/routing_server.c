@@ -233,4 +233,3 @@ void *handle_client(void *arg) {
     close(client_sock);
     pthread_exit(NULL);
 }
-

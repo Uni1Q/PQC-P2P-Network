@@ -7,6 +7,7 @@
 #include "chat.h"
 #include "utils.h"
 #include "network.h"
+#include "constants.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +16,7 @@
 
 // Declare external variables
 extern int server_sock;
-extern char username_global[50];
+extern char username_global[USERNAME_MAX_LENGTH];
 extern int peer_port;
 extern volatile int in_chat;
 

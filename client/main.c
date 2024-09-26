@@ -1,6 +1,9 @@
 //
 // Created by rokas on 24/09/2024.
 //
+
+// client/main.c
+
 #include "client.h"
 #include "chat.h"
 #include "utils.h"
@@ -26,6 +29,7 @@ int main() {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
     pthread_t listener_thread, peer_listener_thread;
+    int registered = 0; // Flag to track registration status
 
     // Connect to the server
     server_sock = connect_to_server(SERVER_IP, SERVER_PORT);
@@ -39,53 +43,54 @@ int main() {
     fgets(buffer, sizeof(buffer), stdin);
     trim_newline(buffer);
 
-if (strcmp(buffer, "yes") == 0) {
-    safe_print("Enter port to listen for incoming connections: ");
-    fgets(buffer, sizeof(buffer), stdin);
-    trim_newline(buffer);
-    peer_port = atoi(buffer);
+    if (strcmp(buffer, "yes") == 0) {
+        safe_print("Enter port to listen for incoming connections: ");
+        fgets(buffer, sizeof(buffer), stdin);
+        trim_newline(buffer);
+        peer_port = atoi(buffer);
 
-    // Registration loop
-    while (1) {
-        safe_print("Enter your preferred username: ");
-        fgets(username_global, sizeof(username_global), stdin);
-        trim_newline(username_global);
+        // Registration loop
+        while (1) {
+            safe_print("Enter your preferred username: ");
+            fgets(username_global, sizeof(username_global), stdin);
+            trim_newline(username_global);
 
-        // Send registration request to the server
-        snprintf(buffer, sizeof(buffer), "REGISTER %s %d", username_global, peer_port);
-        safe_print("Sending to server: '%s'\n", buffer); // Debugging statement
-        if (write(server_sock, buffer, strlen(buffer)) < 0) {
-            perror("write");
-            close(server_sock);
-            exit(1);
+            // Send registration request to the server
+            snprintf(buffer, sizeof(buffer), "REGISTER %s %d\n", username_global, peer_port);
+            safe_print("Sending to server: '%s'\n", buffer); // Debugging statement
+            if (write(server_sock, buffer, strlen(buffer)) < 0) {
+                perror("write");
+                close(server_sock);
+                exit(1);
+            }
+
+            // Read the server's response
+            bytes_read = read(server_sock, buffer, sizeof(buffer) - 1);
+            if (bytes_read <= 0) {
+                perror("read");
+                close(server_sock);
+                exit(1);
+            }
+            buffer[bytes_read] = '\0';
+
+            if (strncmp(buffer, "USERNAME_TAKEN", 14) == 0) {
+                safe_print("Username '%s' is already taken. Please choose a different username.\n", username_global);
+            } else if (strncmp(buffer, "INVALID_COMMAND", 15) == 0) {
+                safe_print("Invalid registration command.\n");
+                close(server_sock);
+                exit(1);
+            } else if (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
+                // Registration successful
+                // Update the local peer list
+                char *peer_list_str = buffer + 10;
+                update_peer_list(peer_list_str);
+                safe_print("Successfully registered with the server.\n");
+                registered = 1; // Set registration flag
+                break;
+            } else {
+                safe_print("Unexpected response from server: %s\n", buffer);
+            }
         }
-
-        // Read the server's response
-        bytes_read = read(server_sock, buffer, sizeof(buffer) - 1);
-        if (bytes_read <= 0) {
-            perror("read");
-            close(server_sock);
-            exit(1);
-        }
-        buffer[bytes_read] = '\0';
-
-        if (strncmp(buffer, "USERNAME_TAKEN", 14) == 0) {
-            safe_print("Username '%s' is already taken. Please choose a different username.\n", username_global);
-        } else if (strncmp(buffer, "INVALID_COMMAND", 15) == 0) {
-            safe_print("Invalid registration command.\n");
-            close(server_sock);
-            exit(1);
-        } else if (strncmp(buffer, "PEER_LIST\n", 10) == 0) {
-            // Registration successful
-            // Update the local peer list
-            char *peer_list_str = buffer + 10;
-            update_peer_list(peer_list_str);
-            safe_print("Successfully registered with the server.\n");
-            break;
-        } else {
-            safe_print("Unexpected response from server: %s\n", buffer);
-        }
-    }
 
         // Start the peer listener thread after successful registration
         if (pthread_create(&peer_listener_thread, NULL, peer_listener, &peer_port) != 0) {
@@ -104,14 +109,7 @@ if (strcmp(buffer, "yes") == 0) {
         // Request the initial peer list from the server
         request_peer_list(server_sock);
 
-        // Start listening for incoming peer connections
-        if (pthread_create(&peer_listener_thread, NULL, peer_listener, &peer_port) != 0) {
-            perror("pthread_create");
-            close(server_sock);
-            exit(1);
-        }
-
-        // Main loop for user input
+        // Main loop for discoverable mode
         while (1) {
             if (in_chat) {
                 // If in chat, wait until chat is over
@@ -125,10 +123,12 @@ if (strcmp(buffer, "yes") == 0) {
             fgets(buffer, sizeof(buffer), stdin);
             trim_newline(buffer);
             if (strcmp(buffer, "exit") == 0) {
-                // Send REMOVE command to the server
-                snprintf(buffer, sizeof(buffer), "REMOVE %s\n", username_global);
-                if (write(server_sock, buffer, strlen(buffer)) < 0) {
-                    perror("write");
+                if (registered) {
+                    // Send REMOVE command to the server
+                    snprintf(buffer, sizeof(buffer), "REMOVE %s\n", username_global);
+                    if (write(server_sock, buffer, strlen(buffer)) < 0) {
+                        perror("write");
+                    }
                 }
                 break;
             }
@@ -200,6 +200,12 @@ if (strcmp(buffer, "yes") == 0) {
 
                         // Start chat session
                         struct chat_info *chat = malloc(sizeof(struct chat_info));
+                        if (chat == NULL) {
+                            perror("malloc");
+                            close(peer_sock);
+                            in_chat = 0;
+                            continue;
+                        }
                         chat->sock = peer_sock;
                         strcpy(chat->peer_username, selected_username);
                         strcpy(chat->your_username, username_global);
@@ -260,89 +266,144 @@ if (strcmp(buffer, "yes") == 0) {
         // Do not become discoverable
         safe_print("You chose not to become discoverable.\n");
 
-        // Main loop for non-discoverable clients
+        // **New Section Starts Here**
+
+        // 1. Ask for a listening port
+        safe_print("Enter port to listen for incoming connections: ");
+        fgets(buffer, sizeof(buffer), stdin);
+        trim_newline(buffer);
+        peer_port = atoi(buffer);
+
+        // Start listening for incoming connections
+        if (pthread_create(&peer_listener_thread, NULL, peer_listener, &peer_port) != 0) {
+            perror("pthread_create");
+            close(server_sock);
+            exit(1);
+        }
+
+        // 2. Main loop for non-discoverable mode
         while (1) {
-            safe_print("Enter the IP and port of the peer to connect to (or 'exit' to quit): ");
+            if (in_chat) {
+                // If in chat, wait until chat is over
+                sleep(1);
+                continue;
+            }
+
+            safe_print("Do you want to (c)onnect to a peer or (w)ait for a connection? (c/w or 'exit' to quit): ");
             fgets(buffer, sizeof(buffer), stdin);
             trim_newline(buffer);
 
             if (strcmp(buffer, "exit") == 0) {
+                if (registered) {
+                    // Send REMOVE command to the server
+                    snprintf(buffer, sizeof(buffer), "REMOVE %s\n", username_global);
+                    if (write(server_sock, buffer, strlen(buffer)) < 0) {
+                        perror("write");
+                    }
+                }
                 break;
-            }
+            } else if (strcmp(buffer, "c") == 0 || strcmp(buffer, "C") == 0) {
+                // User chooses to connect to a peer
+                char peer_ip_input[INET_ADDRSTRLEN];
+                int peer_port_input;
 
-            // Parse IP and port
-            char peer_ip[INET_ADDRSTRLEN];
-            int selected_peer_port;
-            if (sscanf(buffer, "%s %d", peer_ip, &selected_peer_port) != 2) {
-                safe_print("Invalid input. Please enter IP and port.\n");
-                continue;
-            }
+                safe_print("Enter the IP of the peer to connect to: ");
+                fgets(peer_ip_input, sizeof(peer_ip_input), stdin);
+                trim_newline(peer_ip_input);
 
-            // Start P2P connection
-            int peer_sock = connect_to_server(peer_ip, selected_peer_port);
-            if (peer_sock < 0) {
-                safe_print("Could not connect to peer.\n");
-                continue;
-            }
+                safe_print("Enter the port of the peer to connect to: ");
+                fgets(buffer, sizeof(buffer), stdin);
+                trim_newline(buffer);
+                peer_port_input = atoi(buffer);
 
-            safe_print("Connected to peer at %s:%d\n", peer_ip, selected_peer_port);
-
-            // Send connection request with your username
-            snprintf(buffer, sizeof(buffer), "CONNECT_REQUEST %s", "Anonymous");
-            write(peer_sock, buffer, strlen(buffer));
-
-            // Wait for response
-            bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1);
-            if (bytes_read <= 0) {
-                safe_print("No response from peer.\n");
-                close(peer_sock);
-                continue;
-            }
-            buffer[bytes_read] = '\0';
-
-            if (strcmp(buffer, "ACCEPT") == 0) {
-                in_chat = 1; // Set in_chat flag
-
-                // Start chat session
-                struct chat_info *chat = malloc(sizeof(struct chat_info));
-                chat->sock = peer_sock;
-                strcpy(chat->peer_username, "Unknown");
-                strcpy(chat->your_username, "Anonymous");
-
-                // Start chat threads
-                pthread_t send_thread, receive_thread;
-                if (pthread_create(&send_thread, NULL, send_messages, (void *)chat) != 0) {
-                    perror("pthread_create");
-                    close(peer_sock);
-                    free(chat);
-                    in_chat = 0;
+                // Attempt to connect
+                int peer_sock = connect_to_server(peer_ip_input, peer_port_input);
+                if (peer_sock < 0) {
+                    safe_print("Could not connect to peer at %s:%d. Waiting for incoming connections...\n", peer_ip_input, peer_port_input);
+                    // Continue to wait for incoming connections
                     continue;
-                }
-                if (pthread_create(&receive_thread, NULL, receive_messages, (void *)chat) != 0) {
-                    perror("pthread_create");
-                    close(peer_sock);
-                    free(chat);
-                    in_chat = 0;
-                    continue;
-                }
+                } else {
+                    safe_print("Connected to peer at %s:%d\n", peer_ip_input, peer_port_input);
 
-                // Wait for chat to end
-                pthread_join(send_thread, NULL);
-                pthread_join(receive_thread, NULL);
+                    // Send connection request with your username (use "Anonymous" since not registered)
+                    snprintf(buffer, sizeof(buffer), "CONNECT_REQUEST %s\n", "Anonymous");
+                    write(peer_sock, buffer, strlen(buffer));
 
-                safe_print("Connection closed.\n");
-                close(peer_sock);
-                in_chat = 0; // Reset in_chat flag
-            } else if (strcmp(buffer, "DENY") == 0) {
-                safe_print("Connection request denied.\n");
-                close(peer_sock);
-                // Continue
+                    // Wait for response
+                    bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1);
+                    if (bytes_read <= 0) {
+                        safe_print("No response from peer.\n");
+                        close(peer_sock);
+                        continue;
+                    }
+                    buffer[bytes_read] = '\0';
+                    trim_newline(buffer);
+
+                    if (strcmp(buffer, "ACCEPT") == 0) {
+                        safe_print("Connection accepted by peer.\n");
+                        in_chat = 1; // Set in_chat flag
+
+                        // Start chat session
+                        struct chat_info *chat = malloc(sizeof(struct chat_info));
+                        if (chat == NULL) {
+                            perror("malloc");
+                            close(peer_sock);
+                            in_chat = 0;
+                            continue;
+                        }
+                        chat->sock = peer_sock;
+                        strncpy(chat->peer_username, "Unknown", USERNAME_MAX_LENGTH - 1);
+                        chat->peer_username[USERNAME_MAX_LENGTH - 1] = '\0';
+                        strncpy(chat->your_username, "Anonymous", USERNAME_MAX_LENGTH - 1);
+                        chat->your_username[USERNAME_MAX_LENGTH - 1] = '\0';
+
+                        // Start chat threads
+                        pthread_t send_thread, receive_thread;
+                        if (pthread_create(&send_thread, NULL, send_messages, (void *)chat) != 0) {
+                            perror("pthread_create");
+                            close(peer_sock);
+                            free(chat);
+                            in_chat = 0;
+                            continue;
+                        }
+                        if (pthread_create(&receive_thread, NULL, receive_messages, (void *)chat) != 0) {
+                            perror("pthread_create");
+                            close(peer_sock);
+                            free(chat);
+                            in_chat = 0;
+                            continue;
+                        }
+
+                        // Wait for chat to end
+                        pthread_join(send_thread, NULL);
+                        pthread_join(receive_thread, NULL);
+
+                        safe_print("Connection closed.\n");
+                        close(peer_sock);
+                        in_chat = 0; // Reset in_chat flag
+                    } else if (strcmp(buffer, "DENY") == 0) {
+                        safe_print("Connection request denied by peer.\n");
+                        close(peer_sock);
+                        // Continue and remain waiting
+                    } else {
+                        safe_print("Received unknown response from peer.\n");
+                        close(peer_sock);
+                        // Continue and remain waiting
+                    }
+                }
+            } else if (strcmp(buffer, "w") == 0 || strcmp(buffer, "W") == 0) {
+                // User chooses to wait for a connection
+                safe_print("Waiting for incoming connections...\n");
+                // The peer_listener thread is already running, so just continue
+                continue;
             } else {
-                safe_print("Received unknown response from peer.\n");
-                close(peer_sock);
-                // Continue
+                safe_print("Invalid option. Please enter 'c', 'w', or 'exit'.\n");
             }
         }
+
+        // Clean up threads
+        pthread_cancel(peer_listener_thread);
+        pthread_join(peer_listener_thread, NULL);
 
         // Close the routing server socket
         close(server_sock);

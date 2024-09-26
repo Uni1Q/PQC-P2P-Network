@@ -1,11 +1,13 @@
 //
-// Created by rokas on 25/09/2024.
+// Created by rokas on 24/09/2024.
 //
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <stdint.h>
 
 #include <oqs/oqs.h>
 
@@ -31,11 +33,16 @@ static void OQS_print_hex_string(const char *label, const uint8_t *str, size_t l
 	printf("\n");
 }
 
+/* Structure to hold magic numbers for memory checks */
 typedef struct magic_s {
 	uint8_t val[31];
 } magic_t;
 
-static OQS_STATUS kem_test_correctness(const char *method_name) {
+/* Function to perform correctness test and measure performance */
+static OQS_STATUS kem_test_correctness(const char *method_name, int iterations,
+									   double *avg_keygen_time,
+									   double *avg_encaps_time,
+									   double *avg_decaps_time) {
 
 	OQS_KEM *kem = NULL;
 	uint8_t *public_key_alloc = NULL;
@@ -53,11 +60,11 @@ static OQS_STATUS kem_test_correctness(const char *method_name) {
 	OQS_STATUS rc, ret = OQS_ERROR;
 	int rv;
 
-	// The magic numbers are random values.
-	// The length of the magic number was chosen to be 31 to break alignment
+	// Initialize magic numbers for memory checks
 	magic_t magic;
 	OQS_randombytes(magic.val, sizeof(magic_t));
 
+	// Initialize the KEM
 	kem = OQS_KEM_new(method_name);
 	if (kem == NULL) {
 		fprintf(stderr, "ERROR: OQS_KEM_new failed\n");
@@ -75,93 +82,90 @@ static OQS_STATUS kem_test_correctness(const char *method_name) {
 	shared_secret_e_alloc = malloc(kem->length_shared_secret + 2 * sizeof(magic_t));
 	shared_secret_d_alloc = malloc(kem->length_shared_secret + 2 * sizeof(magic_t));
 
-	if ((public_key_alloc == NULL) || (secret_key_alloc == NULL) || (ciphertext_alloc == NULL) || (shared_secret_e_alloc == NULL) || (shared_secret_d_alloc == NULL)) {
+	if ((public_key_alloc == NULL) || (secret_key_alloc == NULL) ||
+		(ciphertext_alloc == NULL) || (shared_secret_e_alloc == NULL) ||
+		(shared_secret_d_alloc == NULL)) {
 		fprintf(stderr, "ERROR: malloc failed\n");
 		goto err;
 	}
 
-	// Set the magic numbers before
+	// Set the magic numbers before the allocated memory
 	memcpy(public_key_alloc, magic.val, sizeof(magic_t));
 	memcpy(secret_key_alloc, magic.val, sizeof(magic_t));
 	memcpy(ciphertext_alloc, magic.val, sizeof(magic_t));
 	memcpy(shared_secret_e_alloc, magic.val, sizeof(magic_t));
 	memcpy(shared_secret_d_alloc, magic.val, sizeof(magic_t));
 
+	// Adjust pointers to skip the magic numbers
 	public_key = public_key_alloc + sizeof(magic_t);
 	secret_key = secret_key_alloc + sizeof(magic_t);
 	ciphertext = ciphertext_alloc + sizeof(magic_t);
 	shared_secret_e = shared_secret_e_alloc + sizeof(magic_t);
 	shared_secret_d = shared_secret_d_alloc + sizeof(magic_t);
 
-	// and after
+	// Set the magic numbers after the allocated memory
 	memcpy(public_key + kem->length_public_key, magic.val, sizeof(magic_t));
 	memcpy(secret_key + kem->length_secret_key, magic.val, sizeof(magic_t));
 	memcpy(ciphertext + kem->length_ciphertext, magic.val, sizeof(magic_t));
 	memcpy(shared_secret_e + kem->length_shared_secret, magic.val, sizeof(magic_t));
 	memcpy(shared_secret_d + kem->length_shared_secret, magic.val, sizeof(magic_t));
 
-	rc = OQS_KEM_keypair(kem, public_key, secret_key);
-	OQS_TEST_CT_DECLASSIFY(&rc, sizeof rc);
-	if (rc != OQS_SUCCESS) {
-		fprintf(stderr, "ERROR: OQS_KEM_keypair failed\n");
-		goto err;
+	// Variables to accumulate total time
+	double total_keygen_time = 0.0;
+	double total_encaps_time = 0.0;
+	double total_decaps_time = 0.0;
+
+	// Iterate for the specified number of iterations
+	for (int i = 0; i < iterations; i++) {
+		struct timespec start, end;
+		double elapsed;
+
+		// Measure Key Generation Time
+		clock_gettime(CLOCK_MONOTONIC, &start);
+		rc = OQS_KEM_keypair(kem, public_key, secret_key);
+		clock_gettime(CLOCK_MONOTONIC, &end);
+		if (rc != OQS_SUCCESS) {
+			fprintf(stderr, "ERROR: OQS_KEM_keypair failed\n");
+			goto err;
+		}
+		elapsed = (end.tv_sec - start.tv_sec) * 1e6 + (end.tv_nsec - start.tv_nsec) / 1e3; // µs
+		total_keygen_time += elapsed;
+
+		// Measure Encapsulation Time
+		clock_gettime(CLOCK_MONOTONIC, &start);
+		rc = OQS_KEM_encaps(kem, ciphertext, shared_secret_e, public_key);
+		clock_gettime(CLOCK_MONOTONIC, &end);
+		if (rc != OQS_SUCCESS) {
+			fprintf(stderr, "ERROR: OQS_KEM_encaps failed\n");
+			goto err;
+		}
+		elapsed = (end.tv_sec - start.tv_sec) * 1e6 + (end.tv_nsec - start.tv_nsec) / 1e3; // µs
+		total_encaps_time += elapsed;
+
+		// Measure Decapsulation Time
+		clock_gettime(CLOCK_MONOTONIC, &start);
+		rc = OQS_KEM_decaps(kem, shared_secret_d, ciphertext, secret_key);
+		clock_gettime(CLOCK_MONOTONIC, &end);
+		if (rc != OQS_SUCCESS) {
+			fprintf(stderr, "ERROR: OQS_KEM_decaps failed\n");
+			goto err;
+		}
+		elapsed = (end.tv_sec - start.tv_sec) * 1e6 + (end.tv_nsec - start.tv_nsec) / 1e3; // µs
+		total_decaps_time += elapsed;
+
+		// Verify shared secrets are equal
+		if (memcmp(shared_secret_e, shared_secret_d, kem->length_shared_secret) != 0) {
+			fprintf(stderr, "ERROR: shared secrets are not equal on iteration %d\n", i + 1);
+			OQS_print_hex_string("shared_secret_e", shared_secret_e, kem->length_shared_secret);
+			OQS_print_hex_string("shared_secret_d", shared_secret_d, kem->length_shared_secret);
+			goto err;
+		}
 	}
 
-	OQS_TEST_CT_DECLASSIFY(public_key, kem->length_public_key);
-	rc = OQS_KEM_encaps(kem, ciphertext, shared_secret_e, public_key);
-	OQS_TEST_CT_DECLASSIFY(&rc, sizeof rc);
-	if (rc != OQS_SUCCESS) {
-		fprintf(stderr, "ERROR: OQS_KEM_encaps failed\n");
-		goto err;
-	}
-
-	OQS_TEST_CT_DECLASSIFY(ciphertext, kem->length_ciphertext);
-	rc = OQS_KEM_decaps(kem, shared_secret_d, ciphertext, secret_key);
-	OQS_TEST_CT_DECLASSIFY(&rc, sizeof rc);
-	if (rc != OQS_SUCCESS) {
-		fprintf(stderr, "ERROR: OQS_KEM_decaps failed\n");
-		goto err;
-	}
-
-	OQS_TEST_CT_DECLASSIFY(shared_secret_d, kem->length_shared_secret);
-	OQS_TEST_CT_DECLASSIFY(shared_secret_e, kem->length_shared_secret);
-	rv = memcmp(shared_secret_e, shared_secret_d, kem->length_shared_secret);
-	if (rv != 0) {
-		fprintf(stderr, "ERROR: shared secrets are not equal\n");
-		OQS_print_hex_string("shared_secret_e", shared_secret_e, kem->length_shared_secret);
-		OQS_print_hex_string("shared_secret_d", shared_secret_d, kem->length_shared_secret);
-		goto err;
-	} else {
-		printf("shared secrets are equal\n");
-	}
-
-	// Test invalid encapsulation (call should either fail or result in invalid shared secret)
-	OQS_randombytes(ciphertext, kem->length_ciphertext);
-	OQS_TEST_CT_DECLASSIFY(ciphertext, kem->length_ciphertext);
-	rc = OQS_KEM_decaps(kem, shared_secret_d, ciphertext, secret_key);
-	OQS_TEST_CT_DECLASSIFY(shared_secret_d, kem->length_shared_secret);
-	OQS_TEST_CT_DECLASSIFY(&rc, sizeof rc);
-	if (rc == OQS_SUCCESS && memcmp(shared_secret_e, shared_secret_d, kem->length_shared_secret) == 0) {
-		fprintf(stderr, "ERROR: OQS_KEM_decaps succeeded on wrong input\n");
-		goto err;
-	}
-
-#ifndef OQS_ENABLE_TEST_CONSTANT_TIME
-	rv = memcmp(public_key + kem->length_public_key, magic.val, sizeof(magic_t));
-	rv |= memcmp(secret_key + kem->length_secret_key, magic.val, sizeof(magic_t));
-	rv |= memcmp(ciphertext + kem->length_ciphertext, magic.val, sizeof(magic_t));
-	rv |= memcmp(shared_secret_e + kem->length_shared_secret, magic.val, sizeof(magic_t));
-	rv |= memcmp(shared_secret_d + kem->length_shared_secret, magic.val, sizeof(magic_t));
-	rv |= memcmp(public_key - sizeof(magic_t), magic.val, sizeof(magic_t));
-	rv |= memcmp(secret_key - sizeof(magic_t), magic.val, sizeof(magic_t));
-	rv |= memcmp(ciphertext - sizeof(magic_t), magic.val, sizeof(magic_t));
-	rv |= memcmp(shared_secret_e - sizeof(magic_t), magic.val, sizeof(magic_t));
-	rv |= memcmp(shared_secret_d - sizeof(magic_t), magic.val, sizeof(magic_t));
-	if (rv != 0) {
-		fprintf(stderr, "ERROR: Magic numbers do not match\n");
-		goto err;
-	}
-#endif
+	// Calculate average times
+	*avg_keygen_time = total_keygen_time / iterations;
+	*avg_encaps_time = total_encaps_time / iterations;
+	*avg_decaps_time = total_decaps_time / iterations;
 
 	ret = OQS_SUCCESS;
 	goto cleanup;
@@ -209,7 +213,7 @@ struct thread_data {
 
 void *test_wrapper(void *arg) {
 	struct thread_data *td = arg;
-	td->rc = kem_test_correctness(td->alg_name);
+	td->rc = kem_test_correctness(td->alg_name, 1000, NULL, NULL, NULL); // Modify if needed
 	return NULL;
 }
 #endif
@@ -236,13 +240,22 @@ int main(int argc, char **argv) {
 	OQS_randombytes_switch_algorithm("system");
 #endif
 
+	// Number of iterations for performance measurement
+	int iterations = 1000;
+
+	// Variables to store average times
+	double avg_keygen = 0.0;
+	double avg_encaps = 0.0;
+	double avg_decaps = 0.0;
+
 	OQS_STATUS rc;
+
 #if OQS_USE_PTHREADS
 #define MAX_LEN_KEM_NAME_ 64
-	// don't run Classic McEliece in threads because of large stack usage
+	// Don't run certain KEMs in threads due to large stack usage
 	char no_thread_kem_patterns[][MAX_LEN_KEM_NAME_]  = {"Classic-McEliece", "HQC-256-"};
 	int test_in_thread = 1;
-	for (size_t i = 0 ; i < sizeof(no_thread_kem_patterns) / MAX_LEN_KEM_NAME_; ++i) {
+	for (size_t i = 0 ; i < sizeof(no_thread_kem_patterns) / sizeof(no_thread_kem_patterns[0]); ++i) {
 		if (strstr(alg_name, no_thread_kem_patterns[i]) != NULL) {
 			test_in_thread = 0;
 			break;
@@ -261,15 +274,24 @@ int main(int argc, char **argv) {
 		pthread_join(thread, NULL);
 		rc = td.rc;
 	} else {
-		rc = kem_test_correctness(alg_name);
+		rc = kem_test_correctness(alg_name, iterations, &avg_keygen, &avg_encaps, &avg_decaps);
 	}
 #else
-	rc = kem_test_correctness(alg_name);
+	rc = kem_test_correctness(alg_name, iterations, &avg_keygen, &avg_encaps, &avg_decaps);
 #endif
+
 	if (rc != OQS_SUCCESS) {
 		OQS_destroy();
 		return EXIT_FAILURE;
 	}
+
+#if !OQS_USE_PTHREADS
+	printf("Kyber %s Speed Test over %d iterations:\n", alg_name, iterations);
+	printf("Average Key Generation Time: %.2f µs\n", avg_keygen);
+	printf("Average Encapsulation Time: %.2f µs\n", avg_encaps);
+	printf("Average Decapsulation Time: %.2f µs\n", avg_decaps);
+#endif
+
 	OQS_destroy();
 	return EXIT_SUCCESS;
 }

@@ -14,7 +14,7 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 
-#define SERVER_IP "159.89.248.152" // 127.0.0.1 for local testing, 159.89.248.152 to connect to droplet
+#define SERVER_IP "127.0.0.1" // 127.0.0.1 for local testing, 159.89.248.152 to connect to droplet
 #define SERVER_PORT 5453
 #define BUFFER_SIZE 1024
 

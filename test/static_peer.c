@@ -26,8 +26,20 @@ void *handle_p2p_connection(void *arg) {
 
 	while ((bytes_read = read(peer_sock, buffer, sizeof(buffer) - 1)) > 0) {
 		buffer[bytes_read] = '\0';
-		// For testing, echo the message back
-		write(peer_sock, buffer, bytes_read);
+		printf("Received from peer: %s", buffer); // Optional: Log received message
+
+		// Send acknowledgment
+		const char *ack = "ACK\n";
+		if (write(peer_sock, ack, strlen(ack)) <= 0) {
+			perror("write ACK");
+			break;
+		}
+	}
+
+	if (bytes_read == 0) {
+		printf("Peer disconnected gracefully.\n");
+	} else if (bytes_read < 0) {
+		perror("read");
 	}
 
 	close(peer_sock);

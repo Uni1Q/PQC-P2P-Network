@@ -2,7 +2,6 @@
 // Created by rokas on 24/09/2024.
 //
 
-// peer_registry.c
 #include "peer_registry.h"
 #include <string.h>
 #include <stdio.h>
@@ -17,7 +16,7 @@ void add_peer(const char *username, const char *ip, int port) {
     if (peer_count < MAX_PEERS) {
         strcpy(peer_list[peer_count].username, username);
         strcpy(peer_list[peer_count].ip, ip);
-        peer_list[peer_count].port = port;
+		peer_list[peer_count].port = port;
         peer_count++;
     }
     pthread_mutex_unlock(&peer_list_mutex);

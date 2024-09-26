@@ -2,7 +2,6 @@
 // Created by rokas on 24/09/2024.
 //
 
-// common/constants.h
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 

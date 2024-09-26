@@ -2,7 +2,6 @@
 // Created by rokas on 24/09/2024.
 //
 
-// peer_registry.h
 #ifndef PEER_REGISTRY_H
 #define PEER_REGISTRY_H
 
@@ -16,9 +15,9 @@
 #define MAX_PEERS 100
 
 struct Peer {
-    char username[50];
-    char ip[INET_ADDRSTRLEN];
-    int port;
+	char username[50];
+	char ip[INET_ADDRSTRLEN];
+	int port;
 };
 
 extern struct Peer peer_list[MAX_PEERS];

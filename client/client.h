@@ -2,7 +2,6 @@
 // Created by rokas on 24/09/2024.
 //
 
-// client.h
 #ifndef CLIENT_H
 #define CLIENT_H
 

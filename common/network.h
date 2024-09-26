@@ -2,7 +2,6 @@
 // Created by rokas on 24/09/2024.
 //
 
-// common/network.h
 #ifndef NETWORK_H
 #define NETWORK_H
 
@@ -11,9 +10,9 @@
 #include "constants.h"
 
 typedef struct {
-    char username[USERNAME_MAX_LENGTH];
-    char ip[INET_ADDRSTRLEN];
-    int port;
+	char username[USERNAME_MAX_LENGTH];
+	char ip[INET_ADDRSTRLEN];
+	int port;
 } Peer;
 
 int create_socket();

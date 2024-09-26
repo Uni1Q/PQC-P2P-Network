@@ -2,7 +2,6 @@
 // Created by rokas on 24/09/2024.
 //
 
-// chat.h
 #ifndef CHAT_H
 #define CHAT_H
 

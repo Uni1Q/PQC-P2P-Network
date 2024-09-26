@@ -2,7 +2,6 @@
 // Created by rokas on 24/09/2024.
 //
 
-// utils.h
 #ifndef UTILS_H
 #define UTILS_H
 
